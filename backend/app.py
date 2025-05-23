@@ -180,15 +180,22 @@ def process_file_sync(file_content: bytes, filename: str, task_id: str) -> bool:
             
             # The FileProcessor saves files with unique names (timestamped)
             # to the 'output_directory' it was initialized with.
-            # We need to find these specific files from processor.downloads_path.
+            # The base name used by FileProcessor includes the task_id: f"{task_id}_{original_base_filename}"
             
+            # 'base_filename' here is from the original uploaded file (e.g., "CPS_6457E_03")
+            # The FileProcessor uses a base name derived from its input, which is `temp_file_path`
+            # So, the pattern for searching should be based on "{task_id}_{base_filename}_Output_"
+            
+            search_prefix_for_processor_outputs = f"{task_id}_{base_filename}"
+            logger.info(f"Searching for files in {processor.downloads_path} with prefix pattern: {search_prefix_for_processor_outputs}")
+
             generated_files_in_processor_path = os.listdir(processor.downloads_path)
 
             potential_excel_files = [
-                f for f in generated_files_in_processor_path if f.startswith(f"{base_filename}_Output_") and f.endswith(".xlsx")
+                f for f in generated_files_in_processor_path if f.startswith(f"{search_prefix_for_processor_outputs}_Output_") and f.endswith(".xlsx")
             ]
             potential_log_files = [
-                f for f in generated_files_in_processor_path if f.startswith(f"{base_filename}_Log_") and f.endswith(".txt")
+                f for f in generated_files_in_processor_path if f.startswith(f"{search_prefix_for_processor_outputs}_Log_") and f.endswith(".txt")
             ]
 
             excel_data = None
@@ -199,16 +206,18 @@ def process_file_sync(file_content: bytes, filename: str, task_id: str) -> bool:
                 latest_excel_filename_from_processor = potential_excel_files[0]
                 excel_path = os.path.join(processor.downloads_path, latest_excel_filename_from_processor)
                 
-                excel_download_filename = f"{base_filename}_{task_id}.xlsx"
+                # For download, we use the original base_filename and task_id for user-friendliness
+                excel_download_filename = f"{base_filename}_{task_id}.xlsx" 
                 
                 with open(excel_path, 'rb') as f:
                     excel_data = io.BytesIO(f.read())
                 
                 processing_tasks[task_id]['excel_data'] = excel_data
                 output_files.append({'type': 'excel', 'filename': excel_download_filename})
-                logger.info(f"Found and stored Excel file: {latest_excel_filename_from_processor} for task {task_id}")
+                logger.info(f"Found and stored Excel file: {latest_excel_filename_from_processor} (download as {excel_download_filename}) for task {task_id}")
             else:
-                logger.warning(f"No Excel file found for task {task_id} with base_filename {base_filename} in {processor.downloads_path}")
+                logger.warning(f"No Excel file found for task {task_id} with search prefix {search_prefix_for_processor_outputs} in {processor.downloads_path}")
+                logger.warning(f"Available files in {processor.downloads_path}: {generated_files_in_processor_path}")
 
 
             if potential_log_files:
@@ -223,9 +232,10 @@ def process_file_sync(file_content: bytes, filename: str, task_id: str) -> bool:
                     
                 processing_tasks[task_id]['log_data'] = log_data
                 output_files.append({'type': 'log', 'filename': log_download_filename})
-                logger.info(f"Found and stored Log file: {latest_log_filename_from_processor} for task {task_id}")
+                logger.info(f"Found and stored Log file: {latest_log_filename_from_processor} (download as {log_download_filename}) for task {task_id}")
             else:
-                logger.warning(f"No Log file found for task {task_id} with base_filename {base_filename} in {processor.downloads_path}")
+                logger.warning(f"No Log file found for task {task_id} with search prefix {search_prefix_for_processor_outputs} in {processor.downloads_path}")
+                logger.warning(f"Available files in {processor.downloads_path}: {generated_files_in_processor_path}")
             
             # Update task with files
             processing_tasks[task_id]['files'] = output_files
