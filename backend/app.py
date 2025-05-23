@@ -146,8 +146,16 @@ def process_file_sync(file_content: bytes, filename: str, task_id: str) -> bool:
         # Update progress
         processing_tasks[task_id]['progress'] = 30
         
-        # Initialize the processor
-        processor = FileProcessor()
+        # Determine output directory based on environment
+        if os.environ.get('DYNO') or os.environ.get('RENDER'):  # Heroku or Render
+            output_directory = "/tmp"
+        else: # Local or other environments
+            import tempfile
+            output_directory = os.path.join(tempfile.gettempdir(), "barebones_fastapi_outputs")
+            os.makedirs(output_directory, exist_ok=True)
+
+        # Initialize the processor with the determined output directory
+        processor = FileProcessor(output_dir=output_directory)
         
         # Get filename without extension for output naming
         base_filename = os.path.splitext(filename)[0]
@@ -170,78 +178,54 @@ def process_file_sync(file_content: bytes, filename: str, task_id: str) -> bool:
             excel_data = None
             log_data = None
             
-            # Check if processor has output files directly
-            excel_files = []
-            log_files = []
+            # The FileProcessor saves files with unique names (timestamped)
+            # to the 'output_directory' it was initialized with.
+            # We need to find these specific files from processor.downloads_path.
             
-            # Look for files in the temp directory first
-            if os.path.exists(tmp_dir):
-                excel_files = [f for f in os.listdir(tmp_dir) if f.startswith(f"{base_filename}_") and f.endswith(".xlsx")]
-                log_files = [f for f in os.listdir(tmp_dir) if f.startswith(f"{base_filename}_") and f.endswith("_Log.txt")]
-            
-            # If no excel files were found, create one directly
-            if not excel_files:
-                # Generate Excel file directly in memory
-                try:
-                    # Create Excel file in memory
-                    excel_data = io.BytesIO()
-                    # If processor outputs DataFrames, write them directly to the buffer
-                    if hasattr(processor, 'get_output_dataframe'):
-                        output_df = processor.get_output_dataframe()
-                        if output_df is not None:
-                            with pd.ExcelWriter(excel_data, engine='xlsxwriter') as writer:
-                                output_df.to_excel(writer, index=False, sheet_name="Report")
-                    excel_data.seek(0)
-                    
-                    # Also save a copy to tmp for debugging if needed
-                    excel_path = os.path.join(tmp_dir, f"{base_filename}_{task_id}.xlsx")
-                    with open(excel_path, 'wb') as f:
-                        f.write(excel_data.getvalue())
-                except Exception as e:
-                    logger.error(f"Error generating Excel file: {str(e)}")
-            else:
-                # Use the existing file from tmp
-                latest_excel = max(excel_files, key=lambda f: os.path.getmtime(os.path.join(tmp_dir, f)))
-                excel_path = os.path.join(tmp_dir, latest_excel)
-                excel_filename = f"{base_filename}_{task_id}.xlsx"
+            generated_files_in_processor_path = os.listdir(processor.downloads_path)
+
+            potential_excel_files = [
+                f for f in generated_files_in_processor_path if f.startswith(f"{base_filename}_Output_") and f.endswith(".xlsx")
+            ]
+            potential_log_files = [
+                f for f in generated_files_in_processor_path if f.startswith(f"{base_filename}_Log_") and f.endswith(".txt")
+            ]
+
+            excel_data = None
+            log_data = None
+
+            if potential_excel_files:
+                potential_excel_files.sort(key=lambda f: os.path.getmtime(os.path.join(processor.downloads_path, f)), reverse=True)
+                latest_excel_filename_from_processor = potential_excel_files[0]
+                excel_path = os.path.join(processor.downloads_path, latest_excel_filename_from_processor)
                 
-                # Store file data in memory
+                excel_download_filename = f"{base_filename}_{task_id}.xlsx"
+                
                 with open(excel_path, 'rb') as f:
                     excel_data = io.BytesIO(f.read())
-                    excel_data.seek(0)
-            
-            # Save to task if we have excel data
-            if excel_data:
+                
                 processing_tasks[task_id]['excel_data'] = excel_data
-                output_files.append({'type': 'excel', 'filename': f"{base_filename}_{task_id}.xlsx"})
-            
-            # Handle log files similarly
-            if not log_files:
-                # Create a basic log file if none exists
-                log_data = io.BytesIO()
-                log_data.write(f"Processing task {task_id} completed successfully.\n".encode('utf-8'))
-                log_data.write(f"File: {filename}\n".encode('utf-8'))
-                log_data.write(f"Timestamp: {datetime.now().isoformat()}\n".encode('utf-8'))
-                log_data.seek(0)
-                
-                # Save a copy to tmp
-                log_path = os.path.join(tmp_dir, f"{base_filename}_{task_id}_Log.txt")
-                with open(log_path, 'wb') as f:
-                    f.write(log_data.getvalue())
+                output_files.append({'type': 'excel', 'filename': excel_download_filename})
+                logger.info(f"Found and stored Excel file: {latest_excel_filename_from_processor} for task {task_id}")
             else:
-                # Use existing log file
-                latest_log = max(log_files, key=lambda f: os.path.getmtime(os.path.join(tmp_dir, f)))
-                log_path = os.path.join(tmp_dir, latest_log)
-                
-                # Store file data in memory
+                logger.warning(f"No Excel file found for task {task_id} with base_filename {base_filename} in {processor.downloads_path}")
+
+
+            if potential_log_files:
+                potential_log_files.sort(key=lambda f: os.path.getmtime(os.path.join(processor.downloads_path, f)), reverse=True)
+                latest_log_filename_from_processor = potential_log_files[0]
+                log_path = os.path.join(processor.downloads_path, latest_log_filename_from_processor)
+
+                log_download_filename = f"{base_filename}_{task_id}_Log.txt"
+
                 with open(log_path, 'rb') as f:
                     log_data = io.BytesIO(f.read())
-                    log_data.seek(0)
-            
-            # Save log data to task
-            if log_data:
+                    
                 processing_tasks[task_id]['log_data'] = log_data
-                output_files.append({'type': 'log', 'filename': f"{base_filename}_{task_id}_Log.txt"})
+                output_files.append({'type': 'log', 'filename': log_download_filename})
+                logger.info(f"Found and stored Log file: {latest_log_filename_from_processor} for task {task_id}")
+            else:
+                logger.warning(f"No Log file found for task {task_id} with base_filename {base_filename} in {processor.downloads_path}")
             
             # Update task with files
             processing_tasks[task_id]['files'] = output_files
@@ -335,9 +319,13 @@ async def download_file(task_id: str, file_type: str):
     # Reset file position
     file_data.seek(0)
     
+    # Get content length
+    content_length = len(file_data.getbuffer())
+
     # Add cache-busting and version headers
     headers = {
         "Content-Disposition": f"attachment; filename={filename}",
+        "Content-Length": str(content_length), # Add Content-Length
         "Cache-Control": "no-cache, no-store, must-revalidate",
         "Pragma": "no-cache", 
         "Expires": "0",

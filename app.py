@@ -48,8 +48,17 @@ def process_file(file_content, filename, task_id):
             f.write(file_content)
         
         try:
-            # Initialize the processor
-            processor = FileProcessor()
+            # Determine output directory based on environment
+            if os.environ.get('DYNO'):  # Heroku
+                output_directory = "/tmp"
+            else: # Local or other environments
+                # Using a subdirectory in the system's temp directory for better organization
+                import tempfile
+                output_directory = os.path.join(tempfile.gettempdir(), "barebones_flask_outputs")
+                os.makedirs(output_directory, exist_ok=True)
+
+            # Initialize the processor with the determined output directory
+            processor = FileProcessor(output_dir=output_directory)
             
             # Get filename without extension for output naming
             base_filename = os.path.splitext(filename)[0]
@@ -61,40 +70,54 @@ def process_file(file_content, filename, task_id):
                 # Store output files in memory
                 output_files = []
                 
-                # Find the generated Excel file
-                # Use /tmp directory on Heroku, otherwise use Downloads folder
-                if os.environ.get('DYNO'):  # Heroku sets DYNO environment variable
-                    downloads_path = "/tmp"
-                else:
-                    downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
-                excel_files = [f for f in os.listdir(downloads_path) if f.startswith(f"{base_filename}_") and f.endswith(".xlsx")]
-                log_files = [f for f in os.listdir(downloads_path) if f.startswith(f"{base_filename}_") and f.endswith("_Log.txt")]
+                # The FileProcessor now saves files with unique names (timestamped)
+                # to the 'output_directory' it was initialized with.
+                # We need to find these specific files.
+
+                # List files in the output_directory used by the processor
+                # Note: processor.downloads_path holds the actual output_directory
+                generated_files = os.listdir(processor.downloads_path)
+
+                # Find the Excel file: it will start with base_filename and end with .xlsx
+                # It will also contain "_Output_" and a timestamp.
+                # We'll look for the most recent one if multiple somehow match (though unlikely with timestamps)
                 
-                if excel_files:
-                    latest_excel = max(excel_files, key=lambda f: os.path.getmtime(os.path.join(downloads_path, f)))
-                    excel_path = os.path.join(downloads_path, latest_excel)
-                    excel_filename = f"{base_filename}_{task_id}.xlsx"
+                # Correctly find the generated Excel and Log files from the processor's output directory
+                # The filenames now include timestamps, so we need a more robust way to find them.
+                # We'll sort by modification time to get the latest, assuming they follow the pattern.
+
+                potential_excel_files = [f for f in generated_files if f.startswith(f"{base_filename}_Output_") and f.endswith(".xlsx")]
+                potential_log_files = [f for f in generated_files if f.startswith(f"{base_filename}_Log_") and f.endswith(".txt")]
+
+                if potential_excel_files:
+                    # Sort by modification time, newest first
+                    potential_excel_files.sort(key=lambda f: os.path.getmtime(os.path.join(processor.downloads_path, f)), reverse=True)
+                    latest_excel_filename_from_processor = potential_excel_files[0]
+                    excel_path = os.path.join(processor.downloads_path, latest_excel_filename_from_processor)
                     
-                    # Store file data in memory
+                    # Use a task-specific name for download, but read the uniquely named file
+                    excel_download_filename = f"{base_filename}_{task_id}.xlsx" 
+                    
                     with open(excel_path, 'rb') as f:
                         excel_data = io.BytesIO(f.read())
                     
-                    # Save to task
                     processing_tasks[task_id]['excel_data'] = excel_data
-                    output_files.append({'type': 'excel', 'filename': excel_filename})
-                
-                if log_files:
-                    latest_log = max(log_files, key=lambda f: os.path.getmtime(os.path.join(downloads_path, f)))
-                    log_path = os.path.join(downloads_path, latest_log)
-                    log_filename = f"{base_filename}_{task_id}_Log.txt"
-                    
-                    # Store file data in memory
+                    output_files.append({'type': 'excel', 'filename': excel_download_filename})
+                    logger.info(f"Found and stored Excel file: {latest_excel_filename_from_processor} for task {task_id}")
+
+                if potential_log_files:
+                    potential_log_files.sort(key=lambda f: os.path.getmtime(os.path.join(processor.downloads_path, f)), reverse=True)
+                    latest_log_filename_from_processor = potential_log_files[0]
+                    log_path = os.path.join(processor.downloads_path, latest_log_filename_from_processor)
+
+                    log_download_filename = f"{base_filename}_{task_id}_Log.txt"
+
                     with open(log_path, 'rb') as f:
                         log_data = io.BytesIO(f.read())
-                    
-                    # Save to task
+                        
                     processing_tasks[task_id]['log_data'] = log_data
-                    output_files.append({'type': 'log', 'filename': log_filename})
+                    output_files.append({'type': 'log', 'filename': log_download_filename})
+                    logger.info(f"Found and stored Log file: {latest_log_filename_from_processor} for task {task_id}")
                 
                 # Update status to complete
                 processing_tasks[task_id]['status'] = 'complete'
@@ -185,23 +208,33 @@ def download_file(filename):
     
     # Check if it's an Excel file
     if filename.endswith('.xlsx') and 'excel_data' in task:
-        task['excel_data'].seek(0)
-        return send_file(
-            task['excel_data'],
+        file_like_object = task['excel_data']
+        file_like_object.seek(0)
+        # Get content length
+        content_length = len(file_like_object.getbuffer())
+        response = send_file(
+            file_like_object,
             as_attachment=True,
             download_name=filename,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
+        response.headers["Content-Length"] = content_length
+        return response
     
     # Check if it's a log file
     elif filename.endswith('_Log.txt') and 'log_data' in task:
-        task['log_data'].seek(0)
-        return send_file(
-            task['log_data'],
+        file_like_object = task['log_data']
+        file_like_object.seek(0)
+        # Get content length
+        content_length = len(file_like_object.getbuffer())
+        response = send_file(
+            file_like_object,
             as_attachment=True,
             download_name=filename,
             mimetype='text/plain'
         )
+        response.headers["Content-Length"] = content_length
+        return response
     
     return jsonify({'error': 'File not found'}), 404
 

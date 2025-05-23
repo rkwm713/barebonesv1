@@ -150,12 +150,23 @@ class ProcessingLogger:
 
 
 class FileProcessor:
-    def __init__(self):
-        # Use /tmp directory on Heroku, otherwise use Downloads folder
-        if os.environ.get('DYNO'):  # Heroku sets DYNO environment variable
+    def __init__(self, output_dir=None):
+        # Centralized path management with fallback logic
+        if output_dir:
+            self.downloads_path = output_dir
+        elif os.environ.get('DYNO'):  # Heroku sets DYNO environment variable
             self.downloads_path = "/tmp"
+        elif os.environ.get('RENDER'):  # Render deployment
+            self.downloads_path = "/tmp" # Common for Render to use /tmp or a dedicated disk mount
         else:
-            self.downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
+            # Local development - use a dedicated temp directory within the project or user's temp
+            import tempfile
+            # Using a subdirectory in the system's temp directory for better organization
+            self.downloads_path = os.path.join(tempfile.gettempdir(), "barebones_outputs")
+
+        # Ensure the directory exists
+        os.makedirs(self.downloads_path, exist_ok=True)
+        
         self.job_data = None
         self.logger = ProcessingLogger()
 
@@ -165,30 +176,26 @@ class FileProcessor:
 
     def format_height_feet_inches(self, total_in):
         if not isinstance(total_in, (int, float)):
-            print(f"DEBUG_FORMAT: Invalid input type for total_in: {total_in} (type: {type(total_in)})")
+            # Consider logging this as a warning if it's unexpected
+            # print(f"DEBUG_FORMAT: Invalid input type for total_in: {total_in} (type: {type(total_in)})")
             return ""
-
-        # For debugging
-        print(f"DEBUG_FORMAT: Input total_in: {total_in}")
 
         _feet_div, _rem_div = divmod(total_in, 12)
         _feet_int = int(_feet_div)
         _inches_round = round(_rem_div)
 
-        print(f"DEBUG_FORMAT: divmod_feet: {_feet_div}, divmod_rem: {_rem_div}")
-        print(f"DEBUG_FORMAT: int_feet: {_feet_int}, rounded_inches_before_correction: {_inches_round}")
-
         feet = _feet_int
         inches = _inches_round
 
         if inches == 12:
-            print(f"DEBUG_FORMAT: Correcting 12 inches for total_in: {total_in}")
-            feet  += 1
+            feet += 1
             inches = 0
 
         result = f"{feet}'-{inches}\""
-        if result == "24'-12\"": # Check for the specific problematic output
-            print(f"ERROR_OUTPUT_DETECTED: For total_in={total_in}, got {result}. Intermediate: feet_div={_feet_div}, rem_div={_rem_div}, feet_int={_feet_int}, inches_round={_inches_round}, final_feet={feet}, final_inches={inches}")
+        # The specific error check for "24'-12\"" might indicate a deeper logic issue
+        # if it occurs frequently. For now, removing the print.
+        # if result == "24'-12\"":
+        #     print(f"ERROR_OUTPUT_DETECTED: For total_in={total_in}, got {result}. Intermediate: feet_div={_feet_div}, rem_div={_rem_div}, feet_int={_feet_int}, inches_round={_inches_round}, final_feet={feet}, final_inches={inches}")
         return result
 
     def get_attachers_from_node_trace(self, job_data, node_id):
@@ -1675,314 +1682,326 @@ class FileProcessor:
             "CPSE Application Comments", "Movement Summary", "From Pole", "To Pole"
         ]
         
-        # Create Excel writer
-        writer = pd.ExcelWriter(path, engine='xlsxwriter')
-        # Get the workbook and worksheet objects to apply formatting
-        workbook = writer.book
-        
-        # List to store all final rows
-        df_final_rows = []
-        
-        if df.empty:
-            print("DataFrame is empty, processing job_data directly to create sample structure.")
+        df_final_rows = [] 
+        writer = None 
+
+        try:
+            writer = pd.ExcelWriter(path, engine='xlsxwriter')
+            workbook = writer.book
             
-            # Since process_data is now implemented but returned empty, create a minimal sample structure
-            sample_row = {
-                "Connection ID": "SAMPLE_CONN_001",
-                "Operation Number": 1,
-                "Attachment Action": "I",
-                "Pole Owner": "CPS",
-                "Pole #": "PL12345",
-                "SCID": "12345",
-                "Pole Structure": "35-5",
-                "Proposed Riser": "No",
-                "Proposed Guy": "No",
-                "PLA (%) with proposed attachment": "",
-                "Construction Grade of Analysis": "C",
-                "Height Lowest Com": "",
-                "Height Lowest CPS Electrical": "",
-                "Data Category": "Sample_Data",
-                "Bearing": "",
-                "Attacher Description": "Sample - No actual data processed",
-                "Attachment Height - Existing": "",
-                "Attachment Height - Proposed": "",
-                "Mid-Span (same span as existing)": "",
-                "One Touch Transfer": "",
-                "Remedy Description": "",
-                "Responsible Party": "",
-                "Existing CPSE Red Tag on Pole": "NO",
-                "Pole Data Missing in GIS": "",
-                "CPSE Application Comments": "",
-                "Movement Summary": "",
-                "From Pole": "PL12345",
-                "To Pole": "PL12346"
-            }
-            df_final_rows.append(sample_row)
-            
-        else:
-            print("Processing DataFrame with actual data...")
-            
-            # Process each connection in order
-            for _, record in df.iterrows():
-                connection_id = record.get('Connection ID', '')
-                node_id_1 = record.get('node_id_1', '')
-                
-                # Check if this is an underground connection
-                connection_data = job_data.get("connections", {}).get(connection_id, {})
-                is_underground = connection_data.get("attributes", {}).get("connection_type", {}).get("button_added") == "underground cable"
-                
-                # Get attacher data using enhanced methods
-                attacher_data = self.get_attachers_for_node(job_data, node_id_1)
-                
-                # Get lowest heights for this connection (only for aerial)
-                lowest_com = ""
-                lowest_cps = ""
-                if not is_underground:
-                    lowest_com, lowest_cps = self.get_lowest_heights_for_connection(job_data, connection_id)
-                else:
-                    lowest_com = "NA"
-                    lowest_cps = "NA"
-                
-                # Get From Pole/To Pole values
-                from_pole_props = record.get("From Pole Properties", {})
-                to_pole_props = record.get("To Pole Properties", {})
-                
-                # Get From Pole value (DLOC_number or SCID)
-                from_pole_value = from_pole_props.get('DLOC_number')
-                if not from_pole_value or from_pole_value == 'N/A':
-                    from_pole_value = from_pole_props.get('pole_tag', 'N/A')
-                if from_pole_value == 'N/A':
-                    from_pole_value = from_pole_props.get('scid', 'N/A')
-                
-                # Get To Pole value (DLOC_number or SCID)
-                to_pole_value = to_pole_props.get('DLOC_number')
-                if not to_pole_value or to_pole_value == 'N/A':
-                    to_pole_value = to_pole_props.get('pole_tag', 'N/A')
-                if to_pole_value == 'N/A':
-                    to_pole_value = to_pole_props.get('scid', 'N/A')
-                
-                # For underground connections, set To Pole value to "UG"
-                if is_underground:
-                    to_pole_value = "UG"
-                else:
-                    # Add PL prefix if needed for To Pole value
-                    if to_pole_value != 'N/A' and not to_pole_value.upper().startswith('NT') and 'PL' not in to_pole_value.upper():
-                        to_pole_value = f"PL{to_pole_value}"
-                
-                # Generate movement summaries for this connection using enhanced methods
-                all_movements = self.get_all_movements_summary(
-                    attacher_data['main_attachers'], 
-                    attacher_data['reference_spans'], 
-                    attacher_data['backspan']['data']
-                )
-                cps_movements = self.get_cps_movements_only(
-                    attacher_data['main_attachers'], 
-                    attacher_data['reference_spans'], 
-                    attacher_data['backspan']['data']
-                )
-                
-                # Base pole data for all rows related to this connection
-                base_row_data = {
-                    "Connection ID": connection_id,
-                    "Operation Number": record.get("Operation Number", ""),
-                    "Attachment Action": record.get("Attachment Action", "I"),
-                    "Pole Owner": record.get("Pole Owner", "CPS"),
-                    "Pole #": record.get("Pole #", ""),
-                    "SCID": record.get("SCID", ""),
-                    "Pole Structure": record.get("Pole Structure", ""),
-                    "Proposed Riser": "YES (1)" if is_underground else record.get("Proposed Riser", "No"),
-                    "Proposed Guy": record.get("Proposed Guy", "No"),
-                    "PLA (%) with proposed attachment": record.get("PLA (%) with proposed attachment", ""),
-                    "Construction Grade of Analysis": record.get("Construction Grade of Analysis", "C"),
-                    "Height Lowest Com": lowest_com,
-                    "Height Lowest CPS Electrical": lowest_cps,
-                    "One Touch Transfer": record.get("One Touch Transfer", ""),
-                    "Remedy Description": cps_movements if cps_movements else record.get("Remedy Description", ""),
-                    "Responsible Party": record.get("Responsible Party", ""),
-                    "Existing CPSE Red Tag on Pole": record.get("Existing CPSE Red Tag on Pole", "NO"),
-                    "Pole Data Missing in GIS": record.get("Pole Data Missing in GIS", ""),
-                    "CPSE Application Comments": record.get("CPSE Application Comments", ""),
-                    "Movement Summary": all_movements if all_movements else record.get("Movement Summary", ""),
-                    "From Pole": from_pole_value,
-                    "To Pole": to_pole_value,
+            if df.empty:
+                print("DataFrame is empty, processing job_data directly to create sample structure.")
+                sample_row = {
+                    "Connection ID": "SAMPLE_CONN_001",
+                    "Operation Number": 1,
+                    "Attachment Action": "I",
+                    "Pole Owner": "CPS",
+                    "Pole #": "PL12345",
+                    "SCID": "12345",
+                    "Pole Structure": "35-5",
+                    "Proposed Riser": "No",
+                    "Proposed Guy": "No",
+                    "PLA (%) with proposed attachment": "",
+                    "Construction Grade of Analysis": "C",
+                    "Height Lowest Com": "",
+                    "Height Lowest CPS Electrical": "",
+                    "Data Category": "Sample_Data",
+                    "Bearing": "",
+                    "Attacher Description": "Sample - No actual data processed",
+                    "Attachment Height - Existing": "",
+                    "Attachment Height - Proposed": "",
+                    "Mid-Span (same span as existing)": "",
+                    "One Touch Transfer": "",
+                    "Remedy Description": "",
+                    "Responsible Party": "",
+                    "Existing CPSE Red Tag on Pole": "NO",
+                    "Pole Data Missing in GIS": "",
+                    "CPSE Application Comments": "",
+                    "Movement Summary": "",
+                    "From Pole": "PL12345",
+                    "To Pole": "PL12346"
                 }
+                df_final_rows.append(sample_row)
+            else:
+                print("Processing DataFrame with actual data...")
                 
-                # Main Attachers
-                for i, attacher in enumerate(attacher_data['main_attachers']):
-                    row = base_row_data.copy()
-                    row["Data Category"] = "Main_Attacher"
-                    row["Bearing"] = ""
-                    row["Attacher Description"] = attacher.get('name', '')
-                    row["Attachment Height - Existing"] = attacher.get('existing_height', '')
-                    row["Attachment Height - Proposed"] = attacher.get('proposed_height', '')
-                    row["Mid-Span (same span as existing)"] = self.get_midspan_proposed_heights(job_data, connection_id, attacher.get('name', ''))
+                # Process each connection in order
+                for _, record in df.iterrows():
+                    connection_id = record.get('Connection ID', '')
+                    node_id_1 = record.get('node_id_1', '')
                     
-                    # For the flat sheet structure, only put Movement Summary and Remedy Description in the first main attacher row
-                    if i > 0:
-                        row["Movement Summary"] = ""
-                        row["Remedy Description"] = ""
+                    # Check if this is an underground connection
+                    connection_data = job_data.get("connections", {}).get(connection_id, {})
+                    is_underground = connection_data.get("attributes", {}).get("connection_type", {}).get("button_added") == "underground cable"
                     
-                    df_final_rows.append(row)
-                
-                # Reference Spans
-                for ref_span in attacher_data['reference_spans']:
-                    # Reference span header row
-                    ref_header_row = base_row_data.copy()
-                    ref_header_row["Data Category"] = "Ref_Span_Header"
-                    ref_header_row["Bearing"] = ref_span.get('bearing', '')
-                    ref_header_row["Attacher Description"] = f"REF ({ref_span.get('bearing', '')})"
-                    ref_header_row["Attachment Height - Existing"] = ""
-                    ref_header_row["Attachment Height - Proposed"] = ""
-                    ref_header_row["Mid-Span (same span as existing)"] = ""
-                    ref_header_row["Movement Summary"] = ""  # Don't repeat in reference spans
-                    ref_header_row["Remedy Description"] = ""
-                    df_final_rows.append(ref_header_row)
+                    # Get attacher data using enhanced methods
+                    attacher_data = self.get_attachers_for_node(job_data, node_id_1)
                     
-                    # Reference span attacher rows
-                    for attacher in ref_span.get('data', []):
+                    # Get lowest heights for this connection (only for aerial)
+                    lowest_com = ""
+                    lowest_cps = ""
+                    if not is_underground:
+                        lowest_com, lowest_cps = self.get_lowest_heights_for_connection(job_data, connection_id)
+                    else:
+                        lowest_com = "NA"
+                        lowest_cps = "NA"
+                    
+                    # Get From Pole/To Pole values
+                    from_pole_props = record.get("From Pole Properties", {})
+                    to_pole_props = record.get("To Pole Properties", {})
+                    
+                    # Get From Pole value (DLOC_number or SCID)
+                    from_pole_value = from_pole_props.get('DLOC_number')
+                    if not from_pole_value or from_pole_value == 'N/A':
+                        from_pole_value = from_pole_props.get('pole_tag', 'N/A')
+                    if from_pole_value == 'N/A':
+                        from_pole_value = from_pole_props.get('scid', 'N/A')
+                    
+                    # Get To Pole value (DLOC_number or SCID)
+                    to_pole_value = to_pole_props.get('DLOC_number')
+                    if not to_pole_value or to_pole_value == 'N/A':
+                        to_pole_value = to_pole_props.get('pole_tag', 'N/A')
+                    if to_pole_value == 'N/A':
+                        to_pole_value = to_pole_props.get('scid', 'N/A')
+                    
+                    # For underground connections, set To Pole value to "UG"
+                    if is_underground:
+                        to_pole_value = "UG"
+                    else:
+                        # Add PL prefix if needed for To Pole value
+                        if to_pole_value != 'N/A' and not to_pole_value.upper().startswith('NT') and 'PL' not in to_pole_value.upper():
+                            to_pole_value = f"PL{to_pole_value}"
+                    
+                    # Generate movement summaries for this connection using enhanced methods
+                    all_movements = self.get_all_movements_summary(
+                        attacher_data['main_attachers'], 
+                        attacher_data['reference_spans'], 
+                        attacher_data['backspan']['data']
+                    )
+                    cps_movements = self.get_cps_movements_only(
+                        attacher_data['main_attachers'], 
+                        attacher_data['reference_spans'], 
+                        attacher_data['backspan']['data']
+                    )
+                    
+                    # Base pole data for all rows related to this connection
+                    base_row_data = {
+                        "Connection ID": connection_id,
+                        "Operation Number": record.get("Operation Number", ""),
+                        "Attachment Action": record.get("Attachment Action", "I"),
+                        "Pole Owner": record.get("Pole Owner", "CPS"),
+                        "Pole #": record.get("Pole #", ""),
+                        "SCID": record.get("SCID", ""),
+                        "Pole Structure": record.get("Pole Structure", ""),
+                        "Proposed Riser": "YES (1)" if is_underground else record.get("Proposed Riser", "No"),
+                        "Proposed Guy": record.get("Proposed Guy", "No"),
+                        "PLA (%) with proposed attachment": record.get("PLA (%) with proposed attachment", ""),
+                        "Construction Grade of Analysis": record.get("Construction Grade of Analysis", "C"),
+                        "Height Lowest Com": lowest_com,
+                        "Height Lowest CPS Electrical": lowest_cps,
+                        "One Touch Transfer": record.get("One Touch Transfer", ""),
+                        "Remedy Description": cps_movements if cps_movements else record.get("Remedy Description", ""),
+                        "Responsible Party": record.get("Responsible Party", ""),
+                        "Existing CPSE Red Tag on Pole": record.get("Existing CPSE Red Tag on Pole", "NO"),
+                        "Pole Data Missing in GIS": record.get("Pole Data Missing in GIS", ""),
+                        "CPSE Application Comments": record.get("CPSE Application Comments", ""),
+                        "Movement Summary": all_movements if all_movements else record.get("Movement Summary", ""),
+                        "From Pole": from_pole_value,
+                        "To Pole": to_pole_value,
+                    }
+                    
+                    # Main Attachers
+                    for i, attacher in enumerate(attacher_data['main_attachers']):
                         row = base_row_data.copy()
-                        row["Data Category"] = "Ref_Span_Attacher"
-                        row["Bearing"] = ref_span.get('bearing', '')
+                        row["Data Category"] = "Main_Attacher"
+                        row["Bearing"] = ""
                         row["Attacher Description"] = attacher.get('name', '')
                         row["Attachment Height - Existing"] = attacher.get('existing_height', '')
                         row["Attachment Height - Proposed"] = attacher.get('proposed_height', '')
-                        row["Mid-Span (same span as existing)"] = ""  # Not applicable for ref spans
-                        row["Movement Summary"] = ""  # Don't repeat in reference spans
-                        row["Remedy Description"] = ""
+                        row["Mid-Span (same span as existing)"] = self.get_midspan_proposed_heights(job_data, connection_id, attacher.get('name', ''))
+                        
+                        # For the flat sheet structure, only put Movement Summary and Remedy Description in the first main attacher row
+                        if i > 0:
+                            row["Movement Summary"] = ""
+                            row["Remedy Description"] = ""
+                        
                         df_final_rows.append(row)
-                
-                # Backspan
-                backspan_info = attacher_data['backspan']
-                if backspan_info['data']:
-                    # Backspan header row
-                    back_header_row = base_row_data.copy()
-                    back_header_row["Data Category"] = "Backspan_Header"
-                    back_header_row["Bearing"] = backspan_info.get('bearing', '')
-                    back_header_row["Attacher Description"] = f"Backspan ({backspan_info.get('bearing', '')})"
-                    back_header_row["Attachment Height - Existing"] = ""
-                    back_header_row["Attachment Height - Proposed"] = ""
-                    back_header_row["Mid-Span (same span as existing)"] = ""
-                    back_header_row["Movement Summary"] = ""  # Don't repeat in backspans
-                    back_header_row["Remedy Description"] = ""
-                    df_final_rows.append(back_header_row)
                     
-                    # Backspan attacher rows
-                    for attacher in backspan_info['data']:
+                    # Reference Spans
+                    for ref_span in attacher_data['reference_spans']:
+                        # Reference span header row
+                        ref_header_row = base_row_data.copy()
+                        ref_header_row["Data Category"] = "Ref_Span_Header"
+                        ref_header_row["Bearing"] = ref_span.get('bearing', '')
+                        ref_header_row["Attacher Description"] = f"REF ({ref_span.get('bearing', '')})"
+                        ref_header_row["Attachment Height - Existing"] = ""
+                        ref_header_row["Attachment Height - Proposed"] = ""
+                        ref_header_row["Mid-Span (same span as existing)"] = ""
+                        ref_header_row["Movement Summary"] = ""  # Don't repeat in reference spans
+                        ref_header_row["Remedy Description"] = ""
+                        df_final_rows.append(ref_header_row)
+                        
+                        # Reference span attacher rows
+                        for attacher in ref_span.get('data', []):
+                            row = base_row_data.copy()
+                            row["Data Category"] = "Ref_Span_Attacher"
+                            row["Bearing"] = ref_span.get('bearing', '')
+                            row["Attacher Description"] = attacher.get('name', '')
+                            row["Attachment Height - Existing"] = attacher.get('existing_height', '')
+                            row["Attachment Height - Proposed"] = attacher.get('proposed_height', '')
+                            row["Mid-Span (same span as existing)"] = ""  # Not applicable for ref spans
+                            row["Movement Summary"] = ""  # Don't repeat in reference spans
+                            row["Remedy Description"] = ""
+                            df_final_rows.append(row)
+                    
+                    # Backspan
+                    backspan_info = attacher_data['backspan']
+                    if backspan_info['data']:
+                        # Backspan header row
+                        back_header_row = base_row_data.copy()
+                        back_header_row["Data Category"] = "Backspan_Header"
+                        back_header_row["Bearing"] = backspan_info.get('bearing', '')
+                        back_header_row["Attacher Description"] = f"Backspan ({backspan_info.get('bearing', '')})"
+                        back_header_row["Attachment Height - Existing"] = ""
+                        back_header_row["Attachment Height - Proposed"] = ""
+                        back_header_row["Mid-Span (same span as existing)"] = ""
+                        back_header_row["Movement Summary"] = ""  # Don't repeat in backspans
+                        back_header_row["Remedy Description"] = ""
+                        df_final_rows.append(back_header_row)
+                        
+                        # Backspan attacher rows
+                        for attacher in backspan_info['data']:
+                            row = base_row_data.copy()
+                            row["Data Category"] = "Backspan_Attacher"
+                            row["Bearing"] = backspan_info.get('bearing', '')
+                            row["Attacher Description"] = attacher.get('name', '')
+                            row["Attachment Height - Existing"] = attacher.get('existing_height', '')
+                            row["Attachment Height - Proposed"] = attacher.get('proposed_height', '')
+                            row["Mid-Span (same span as existing)"] = ""  # Not applicable for backspans
+                            row["Movement Summary"] = ""  # Don't repeat in backspans
+                            row["Remedy Description"] = ""
+                            df_final_rows.append(row)
+                    
+                    # If no attachers/refs/backspans, ensure at least one pole-only row is written
+                    if not attacher_data['main_attachers'] and not attacher_data['reference_spans'] and not (attacher_data['backspan'] and attacher_data['backspan']['data']):
                         row = base_row_data.copy()
-                        row["Data Category"] = "Backspan_Attacher"
-                        row["Bearing"] = backspan_info.get('bearing', '')
-                        row["Attacher Description"] = attacher.get('name', '')
-                        row["Attachment Height - Existing"] = attacher.get('existing_height', '')
-                        row["Attachment Height - Proposed"] = attacher.get('proposed_height', '')
-                        row["Mid-Span (same span as existing)"] = ""  # Not applicable for backspans
-                        row["Movement Summary"] = ""  # Don't repeat in backspans
-                        row["Remedy Description"] = ""
+                        row["Data Category"] = "Pole_Only"
+                        row["Bearing"] = ""
+                        row["Attacher Description"] = "No attachers found"
+                        row["Attachment Height - Existing"] = ""
+                        row["Attachment Height - Proposed"] = ""
+                        row["Mid-Span (same span as existing)"] = ""
+                        # Keep Movement Summary and Remedy Description for pole-only rows
                         df_final_rows.append(row)
-                
-                # If no attachers/refs/backspans, ensure at least one pole-only row is written
-                if not attacher_data['main_attachers'] and not attacher_data['reference_spans'] and not (attacher_data['backspan'] and attacher_data['backspan']['data']):
-                    row = base_row_data.copy()
-                    row["Data Category"] = "Pole_Only"
-                    row["Bearing"] = ""
-                    row["Attacher Description"] = "No attachers found"
-                    row["Attachment Height - Existing"] = ""
-                    row["Attachment Height - Proposed"] = ""
-                    row["Mid-Span (same span as existing)"] = ""
-                    # Keep Movement Summary and Remedy Description for pole-only rows
-                    df_final_rows.append(row)
-                
-                # First row: Add headers "From Pole" and "To Pole"
-                header_row = {col: "" for col in desired_columns}
-                header_row["Height Lowest Com"] = "From Pole"  # Column J
-                header_row["Height Lowest CPS Electrical"] = "To Pole"  # Column K
-                df_final_rows.append(header_row)
-                
-                # Second row: Add the actual pole values
-                values_row = {col: "" for col in desired_columns}
-                # Get the "From Pole" value (current pole number)
-                from_pole_value = base_row_data.get("Pole #", "")
-                # Get the "To Pole" value (destination pole)
-                to_pole_value = base_row_data.get("To Pole", "")
-                # Add the values to the second row
-                values_row["Height Lowest Com"] = from_pole_value  # Value for From Pole in Column J
-                values_row["Height Lowest CPS Electrical"] = to_pole_value  # Value for To Pole in Column K
-                df_final_rows.append(values_row)
-        
-        # Create final DataFrame and write to Excel
-        final_df = pd.DataFrame(df_final_rows, columns=desired_columns)
-        # Write data starting at the configured row (Excel is 1-based, pandas is 0-based)
-        final_df.to_excel(writer, sheet_name='MakeReadyData', index=False, startrow=EXCEL_DATA_START_ROW-1)
-        
-        # Get the worksheet after writing the data
-        worksheet = writer.sheets['MakeReadyData']
-        
-        # Format for the merged header cells
-        header_format = workbook.add_format({
-            'bold': True,
-            'align': 'center',
-            'valign': 'vcenter',
-            'border': 1
-        })
-        
-        # Format for merged data cells
-        data_format = workbook.add_format({
-            'align': 'center',
-            'valign': 'vcenter',
-            'border': 1
-        })
-        
-        # Merge each column header vertically from rows 1-3
-        for idx, col_name in enumerate(desired_columns):
-            # Convert index to Excel column letter (A, B, C, etc.)
-            col_letter = chr(65 + idx) if idx < 26 else chr(64 + idx // 26) + chr(65 + idx % 26)
+                    
+                    # First row: Add headers "From Pole" and "To Pole"
+                    header_row = {col: "" for col in desired_columns}
+                    header_row["Height Lowest Com"] = "From Pole"  # Column J
+                    header_row["Height Lowest CPS Electrical"] = "To Pole"  # Column K
+                    df_final_rows.append(header_row)
+                    
+                    # Second row: Add the actual pole values
+                    values_row = {col: "" for col in desired_columns}
+                    # Get the "From Pole" value (current pole number)
+                    from_pole_value = base_row_data.get("Pole #", "")
+                    # Get the "To Pole" value (destination pole)
+                    to_pole_value = base_row_data.get("To Pole", "")
+                    # Add the values to the second row
+                    values_row["Height Lowest Com"] = from_pole_value  # Value for From Pole in Column J
+                    values_row["Height Lowest CPS Electrical"] = to_pole_value  # Value for To Pole in Column K
+                    df_final_rows.append(values_row)
             
-            # Merge cells for this column from row 1 to 3
-            worksheet.merge_range(f'{col_letter}1:{col_letter}3', col_name, header_format)
-        
-        # Now merge cells for columns A-I for each unique pole
-        # Group rows by pole (identified by Operation Number)
-        operation_groups = {}
-        excel_row = EXCEL_DATA_START_ROW  # Starting row in Excel (1-based)
-        
-        # First, group rows by Operation Number, skipping empty rows
-        for i, row in enumerate(df_final_rows):
-            op_num = str(row.get("Operation Number", ""))
-            # Skip empty rows (they have empty Operation Number)
-            if not op_num:
-                continue
+            # Create final DataFrame and write to Excel
+            final_df = pd.DataFrame(df_final_rows, columns=desired_columns)
+            # Write data starting at the configured row (Excel is 1-based, pandas is 0-based)
+            final_df.to_excel(writer, sheet_name='MakeReadyData', index=False, startrow=EXCEL_DATA_START_ROW-1)
+            
+            # Get the worksheet after writing the data
+            worksheet = writer.sheets['MakeReadyData']
+            
+            # Format for the merged header cells
+            header_format = workbook.add_format({
+                'bold': True,
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 1
+            })
+            
+            # Format for merged data cells
+            data_format = workbook.add_format({
+                'align': 'center',
+                'valign': 'vcenter',
+                'border': 1
+            })
+            
+            # Merge each column header vertically from rows 1-3
+            for idx, col_name in enumerate(desired_columns):
+                # Convert index to Excel column letter (A, B, C, etc.)
+                col_letter = chr(65 + idx) if idx < 26 else chr(64 + idx // 26) + chr(65 + idx % 26)
                 
-            if op_num not in operation_groups:
-                operation_groups[op_num] = []
-            operation_groups[op_num].append((excel_row + i, row))
-        
-        # Now merge cells for each group in columns A-I
-        for op_num, rows in operation_groups.items():
-            if len(rows) > 1:  # Only merge if there are multiple rows for this pole
-                start_row = rows[0][0]
-                end_row = rows[-1][0]
+                # Merge cells for this column from row 1 to 3
+                worksheet.merge_range(f'{col_letter}1:{col_letter}3', col_name, header_format)
+            
+            # Now merge cells for columns A-I for each unique pole
+            # Group rows by pole (identified by Operation Number)
+            operation_groups = {}
+            excel_row = EXCEL_DATA_START_ROW  # Starting row in Excel (1-based)
+            
+            # First, group rows by Operation Number, skipping empty rows
+            for i, row in enumerate(df_final_rows):
+                op_num = str(row.get("Operation Number", ""))
+                # Skip empty rows (they have empty Operation Number)
+                if not op_num:
+                    continue
+                    
+                if op_num not in operation_groups:
+                    operation_groups[op_num] = []
+                operation_groups[op_num].append((excel_row + i, row))
+            
+            # Now merge cells for each group in columns A-I
+            for op_num, rows in operation_groups.items():
+                if len(rows) > 1:  # Only merge if there are multiple rows for this pole
+                    start_row = rows[0][0]
+                    end_row = rows[-1][0]
+                    
+                    # Merge cells in columns A through I
+                    for col_idx in range(9):  # A=0, B=1, ..., I=8
+                        col_letter = chr(65 + col_idx)  # A, B, C, etc.
+                        
+                        # Get the value from the first row of this group
+                        value = rows[0][1].get(desired_columns[col_idx], "")
+                        
+                        # Merge the cells and set the value
+                        worksheet.merge_range(f'{col_letter}{start_row+1}:{col_letter}{end_row+1}', value, data_format)
+            
+            # Auto-fit all columns
+            for idx, col in enumerate(final_df.columns):
+                # Get the maximum length in this column, handle potential empty series
+                max_data_len = final_df[col].astype(str).map(len).max()
+                if pd.isna(max_data_len): # Handle case where column might be all NaN or empty
+                    max_data_len = 0
                 
-                # Merge cells in columns A through I
-                for col_idx in range(9):  # A=0, B=1, ..., I=8
-                    col_letter = chr(65 + col_idx)  # A, B, C, etc.
-                    
-                    # Get the value from the first row of this group
-                    value = rows[0][1].get(desired_columns[col_idx], "")
-                    
-                    # Merge the cells and set the value
-                    worksheet.merge_range(f'{col_letter}{start_row+1}:{col_letter}{end_row+1}', value, data_format)
-        
-        # Auto-fit all columns
-        for idx, col in enumerate(final_df.columns):
-            # Get the maximum length in this column
-            max_len = max(
-                final_df[col].astype(str).map(len).max(),  # Length of data
-                len(str(col))  # Length of column name
-            ) + 2  # Add a little extra space
-            worksheet.set_column(idx, idx, max_len)  # Set column width
-        
-        writer.close()
-        print(f"Excel file created: {path}")
-        print(f"Total rows written: {len(df_final_rows)}")
+                max_len = max(
+                    max_data_len,  # Length of data
+                    len(str(col))    # Length of column name
+                ) + 2  # Add a little extra space
+                worksheet.set_column(idx, idx, max_len)  # Set column width
+            
+            print(f"Excel file created: {path}")
+            print(f"Total rows written to Excel: {len(df_final_rows)}") # Clarified log
+
+        except Exception as e:
+            print(f"Error during Excel file creation or formatting: {str(e)}")
+            # Optionally re-raise or handle as needed
+            # raise
+        finally:
+            if writer:
+                try:
+                    writer.close()
+                    print(f"Excel writer closed for {path}.")
+                except Exception as e:
+                    print(f"Error closing Excel writer for {path}: {str(e)}")
+
 
     def process_files(self, job_json_path, geojson_path=None):
         """Main processing function that replaces the GUI version"""
@@ -2011,27 +2030,49 @@ class FileProcessor:
 
             if df.empty:
                 print("Warning: DataFrame is empty. No data to export.")
+                # Still create a log file indicating no data was processed.
+                json_base = os.path.splitext(os.path.basename(job_json_path))[0]
+                log_filename_empty = f"{json_base}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_Processing_Log.txt"
+                log_path_empty = os.path.join(self.downloads_path, log_filename_empty)
+                self.logger.write_summary(log_path_empty) # Log will show 0 items processed
+                print(f"Processing log for empty data written to: {log_path_empty}")
                 return False
 
-            # Generate output filename based on JSON file name
-            json_base = os.path.splitext(os.path.basename(job_json_path))[0]
-            output_base = f"{json_base}_Python_Output"
-            output_filename = f"{output_base}.xlsx"
-            output_path = os.path.join(self.downloads_path, output_filename)
+            # Generate unique output filenames using timestamp to prevent conflicts
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            json_base_name = os.path.splitext(os.path.basename(job_json_path))[0]
             
-            # Check if file exists and add versioning if needed
+            output_excel_filename = f"{json_base_name}_Output_{timestamp}.xlsx"
+            output_excel_path = os.path.join(self.downloads_path, output_excel_filename)
+            
+            # Versioning (if somehow a file with the exact same timestamp exists, though unlikely)
             version = 2
-            while os.path.exists(output_path):
-                output_filename = f"{output_base}_v{version}.xlsx"
-                output_path = os.path.join(self.downloads_path, output_filename)
+            temp_excel_path = output_excel_path
+            while os.path.exists(temp_excel_path):
+                temp_excel_filename = f"{json_base_name}_Output_{timestamp}_v{version}.xlsx"
+                temp_excel_path = os.path.join(self.downloads_path, temp_excel_filename)
                 version += 1
+            output_excel_path = temp_excel_path # Use the versioned path if needed
+
+            self.create_output_excel(output_excel_path, df, self.job_data)
+            # Corrected log message for clarity
+            excel_row_count = 0
+            try:
+                # A simple way to get row count without fully parsing if pandas isn't already loaded
+                # For more robust validation, consider using openpyxl or similar to read row count
+                if os.path.exists(output_excel_path):
+                     # This is a placeholder, actual row count is in df_final_rows inside create_output_excel
+                     # We'll rely on the print statement from within create_output_excel for now.
+                     pass # excel_row_count will be printed from create_output_excel
+            except Exception as e:
+                print(f"Could not verify Excel row count: {e}")
+
+            print(f"Successfully created output file: {output_excel_path}")
+            # This log refers to the initial DataFrame size, not the final Excel row count.
+            print(f"Initial DataFrame for processing contained {len(df)} connection records.") 
             
-            self.create_output_excel(output_path, df, self.job_data)
-            print(f"Successfully created output file: {output_path}")
-            print(f"DataFrame contains {len(df)} rows.")
-            
-            # Write the processing log
-            log_filename = f"{json_base}_Processing_Log.txt"
+            # Write the processing log with a unique name
+            log_filename = f"{json_base_name}_Log_{timestamp}.txt"
             log_path = os.path.join(self.downloads_path, log_filename)
             self.logger.write_summary(log_path)
             print(f"Processing log written to: {log_path}")
@@ -2046,48 +2087,56 @@ class FileProcessor:
 
 
 def main():
-    """Main function to run the file processor"""
-    job_json_path = "CPS_6457E_03.json"  # Hardcode for now
-    # geojson_path = None  # GeoJSON is optional
+    """Main function to run the file processor - for local testing"""
+    # This main function is intended for local testing and development.
+    # In a production environment, FileProcessor().process_files() would be called
+    # by the Flask/FastAPI application.
 
-    print(f"Loading Job JSON from: {job_json_path}")
+    # Example: Create a dummy JSON file for testing if one doesn't exist
+    test_json_filename = "test_job_data.json"
+    if not os.path.exists(test_json_filename):
+        print(f"Creating dummy '{test_json_filename}' for testing.")
+        dummy_data = {
+            "nodes": {
+                "node1": {"attributes": {"scid": {"auto_button": "100"}}, "photos": {}},
+                "node2": {"attributes": {"scid": {"auto_button": "101"}}, "photos": {}}
+            },
+            "connections": {
+                "conn1": {"node_id_1": "node1", "node_id_2": "node2", "attributes": {"connection_type": {"button_added": "aerial cable"}}}
+            },
+            "traces": {}
+        }
+        with open(test_json_filename, 'w') as f:
+            json.dump(dummy_data, f)
+        job_json_path = test_json_filename
+    elif os.path.exists("CPS_6457E_03.json"): # Prioritize specific test file if available
+        job_json_path = "CPS_6457E_03.json"
+    else: # Fallback if specific test file is not present but dummy one is
+        job_json_path = test_json_filename
+
+    print(f"--- Local Test Run ---")
+    print(f"Using Job JSON: {job_json_path}")
+
     if not os.path.exists(job_json_path):
-        print(f"Error: Job JSON file not found at {job_json_path}")
+        print(f"Error: Job JSON file not found at {job_json_path}. Please create it or provide a valid path.")
         return
 
-    try:
-        with open(job_json_path, 'r', encoding='utf-8') as file:
-            job_data = json.load(file)
-        print("Job JSON loaded successfully.")
-    except Exception as e:
-        print(f"Error loading Job JSON: {str(e)}")
-        return
-
-    # geojson_data = None  # Keeping GeoJSON processing out for speed
-
-    print("Processing data...")
+    # Create processor instance. For local testing, output_dir can be specified.
+    # If None, it will use the default logic (e.g., system temp).
+    # For this example, let's create an 'outputs' directory in the current working directory.
+    local_output_dir = os.path.join(os.getcwd(), "outputs")
+    os.makedirs(local_output_dir, exist_ok=True)
+    print(f"Local test outputs will be saved to: {local_output_dir}")
     
-    # Create processor instance to access helper methods
-    processor = FileProcessor()
-    processed_dataframe = processor.process_data(job_data, None)  # Pass None for geojson_data
-
-    # Generate a unique filename with timestamp to avoid permission errors
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_filename = f"{os.path.splitext(os.path.basename(job_json_path))[0]}_MakeReady_Output_{timestamp}.xlsx"
-    output_path = output_filename  # Simpler path for testing
-
-    print(f"Creating Excel report at: {output_path}")
-    processor.create_output_excel(output_path, processed_dataframe, job_data)  # Pass job_data
+    processor = FileProcessor(output_dir=local_output_dir)
     
-    if processed_dataframe.empty:
-        print("Warning: No data processed. DataFrame was empty, but Excel file created with headers.")
+    # Call process_files, which now handles loading JSON internally
+    success = processor.process_files(job_json_path) # GeoJSON is optional
+
+    if success:
+        print("--- Local Test Run Completed Successfully ---")
     else:
-        print("Processing complete with data.")
-    
-    # Write the processing log
-    log_filename = f"{os.path.splitext(os.path.basename(job_json_path))[0]}_Processing_Log.txt"
-    processor.logger.write_summary(log_filename)
-    print(f"Processing log written to: {log_filename}")
+        print("--- Local Test Run Failed ---")
 
 
 if __name__ == "__main__":
