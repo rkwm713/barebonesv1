@@ -1,6 +1,7 @@
 import os
 import uuid
-from flask import Flask, request, render_template, redirect, url_for, jsonify, send_from_directory
+import io
+from flask import Flask, request, render_template, jsonify, send_file
 from werkzeug.utils import secure_filename
 import json
 import logging
@@ -15,72 +16,90 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Configuration
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['OUTPUT_FOLDER'] = 'outputs'
 app.config['ALLOWED_EXTENSIONS'] = {'json'}
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload size
 
-# Create necessary directories if they don't exist
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
-
-# Track processing status
+# Track processing status and files in memory
 processing_tasks = {}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
-def process_file(file_path, task_id):
-    """Process the JSON file using the FileProcessor class"""
+def process_file(file_content, filename, task_id):
+    """Process the JSON file using the FileProcessor class in memory"""
+    # Create a temp dir if it doesn't exist
+    os.makedirs('temp', exist_ok=True)
+    
+    # Use a path within the temp directory
+    temp_file_path = os.path.join('temp', f"{task_id}_{filename}")
+    
     try:
         # Update status to processing
         processing_tasks[task_id]['status'] = 'processing'
         
-        # Initialize the processor
-        processor = FileProcessor()
+        # Save temp file for processing (needed for current processor implementation)
+        with open(temp_file_path, 'wb') as f:
+            f.write(file_content)
         
-        # Get filename without extension for output naming
-        base_filename = os.path.splitext(os.path.basename(file_path))[0]
-        
-        # Process the file
-        success = processor.process_files(file_path)
-        
-        if success:
-            # Find the generated Excel file
-            downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
-            excel_files = [f for f in os.listdir(downloads_path) if f.startswith(f"{base_filename}_") and f.endswith(".xlsx")]
-            log_files = [f for f in os.listdir(downloads_path) if f.startswith(f"{base_filename}_") and f.endswith("_Log.txt")]
+        try:
+            # Initialize the processor
+            processor = FileProcessor()
             
-            # Copy files to output folder
-            output_files = []
+            # Get filename without extension for output naming
+            base_filename = os.path.splitext(filename)[0]
             
-            if excel_files:
-                latest_excel = max(excel_files, key=lambda f: os.path.getmtime(os.path.join(downloads_path, f)))
-                # Copy to output folder with a new filename
-                output_excel = f"{base_filename}_{task_id}.xlsx"
-                output_excel_path = os.path.join(app.config['OUTPUT_FOLDER'], output_excel)
-                with open(os.path.join(downloads_path, latest_excel), 'rb') as src_file:
-                    with open(output_excel_path, 'wb') as dest_file:
-                        dest_file.write(src_file.read())
-                output_files.append({'type': 'excel', 'filename': output_excel})
+            # Process the file
+            success = processor.process_files(temp_file_path)
             
-            if log_files:
-                latest_log = max(log_files, key=lambda f: os.path.getmtime(os.path.join(downloads_path, f)))
-                # Copy to output folder with a new filename
-                output_log = f"{base_filename}_{task_id}_Log.txt"
-                output_log_path = os.path.join(app.config['OUTPUT_FOLDER'], output_log)
-                with open(os.path.join(downloads_path, latest_log), 'rb') as src_file:
-                    with open(output_log_path, 'wb') as dest_file:
-                        dest_file.write(src_file.read())
-                output_files.append({'type': 'log', 'filename': output_log})
-            
-            # Update status to complete
-            processing_tasks[task_id]['status'] = 'complete'
-            processing_tasks[task_id]['files'] = output_files
-        else:
-            # Update status to failed
-            processing_tasks[task_id]['status'] = 'failed'
-            processing_tasks[task_id]['error'] = 'Processing failed'
+            if success:
+                # Store output files in memory
+                output_files = []
+                
+                # Find the generated Excel file
+                downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
+                excel_files = [f for f in os.listdir(downloads_path) if f.startswith(f"{base_filename}_") and f.endswith(".xlsx")]
+                log_files = [f for f in os.listdir(downloads_path) if f.startswith(f"{base_filename}_") and f.endswith("_Log.txt")]
+                
+                if excel_files:
+                    latest_excel = max(excel_files, key=lambda f: os.path.getmtime(os.path.join(downloads_path, f)))
+                    excel_path = os.path.join(downloads_path, latest_excel)
+                    excel_filename = f"{base_filename}_{task_id}.xlsx"
+                    
+                    # Store file data in memory
+                    with open(excel_path, 'rb') as f:
+                        excel_data = io.BytesIO(f.read())
+                    
+                    # Save to task
+                    processing_tasks[task_id]['excel_data'] = excel_data
+                    output_files.append({'type': 'excel', 'filename': excel_filename})
+                
+                if log_files:
+                    latest_log = max(log_files, key=lambda f: os.path.getmtime(os.path.join(downloads_path, f)))
+                    log_path = os.path.join(downloads_path, latest_log)
+                    log_filename = f"{base_filename}_{task_id}_Log.txt"
+                    
+                    # Store file data in memory
+                    with open(log_path, 'rb') as f:
+                        log_data = io.BytesIO(f.read())
+                    
+                    # Save to task
+                    processing_tasks[task_id]['log_data'] = log_data
+                    output_files.append({'type': 'log', 'filename': log_filename})
+                
+                # Update status to complete
+                processing_tasks[task_id]['status'] = 'complete'
+                processing_tasks[task_id]['files'] = output_files
+            else:
+                # Update status to failed
+                processing_tasks[task_id]['status'] = 'failed'
+                processing_tasks[task_id]['error'] = 'Processing failed'
+        finally:
+            # Clean up temp file
+            try:
+                if os.path.exists(temp_file_path):
+                    os.remove(temp_file_path)
+            except Exception as e:
+                logger.error(f"Error removing temp file: {str(e)}")
     
     except Exception as e:
         logger.error(f"Error processing file: {str(e)}")
@@ -108,10 +127,9 @@ def upload_file():
         # Generate a unique ID for this task
         task_id = str(uuid.uuid4())
         
-        # Save the file
+        # Get file content
         filename = secure_filename(file.filename)
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}_{filename}")
-        file.save(file_path)
+        file_content = file.read()
         
         # Create task entry
         processing_tasks[task_id] = {
@@ -121,7 +139,7 @@ def upload_file():
         }
         
         # Start processing in a separate thread
-        thread = threading.Thread(target=process_file, args=(file_path, task_id))
+        thread = threading.Thread(target=process_file, args=(file_content, filename, task_id))
         thread.daemon = True
         thread.start()
         
@@ -133,6 +151,11 @@ def upload_file():
     
     return jsonify({'error': 'Invalid file type. Only JSON files are allowed.'}), 400
 
+# Simple health check endpoint for monitoring
+@app.route('/health')
+def health_check():
+    return jsonify({'status': 'ok', 'version': '1.0.0'}), 200
+
 @app.route('/status/<task_id>')
 def task_status(task_id):
     """Check the status of a processing task"""
@@ -142,27 +165,47 @@ def task_status(task_id):
 
 @app.route('/download/<filename>')
 def download_file(filename):
-    """Download a processed file"""
-    return send_from_directory(app.config['OUTPUT_FOLDER'], filename, as_attachment=True)
+    """Download a processed file from memory"""
+    # Find which task has this file
+    task_id = filename.split('_')[-1].split('.')[0]  # Extract task_id from filename
+    if task_id not in processing_tasks:
+        return jsonify({'error': 'File not found'}), 404
+    
+    task = processing_tasks[task_id]
+    
+    # Check if it's an Excel file
+    if filename.endswith('.xlsx') and 'excel_data' in task:
+        task['excel_data'].seek(0)
+        return send_file(
+            task['excel_data'],
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    
+    # Check if it's a log file
+    elif filename.endswith('_Log.txt') and 'log_data' in task:
+        task['log_data'].seek(0)
+        return send_file(
+            task['log_data'],
+            as_attachment=True,
+            download_name=filename,
+            mimetype='text/plain'
+        )
+    
+    return jsonify({'error': 'File not found'}), 404
 
 @app.route('/cleanup/<task_id>', methods=['POST'])
 def cleanup_task(task_id):
-    """Remove task and associated files after processing"""
+    """Remove task and associated files from memory"""
     if task_id in processing_tasks:
-        # Remove uploaded file
-        upload_files = [f for f in os.listdir(app.config['UPLOAD_FOLDER']) if f.startswith(f"{task_id}_")]
-        for file in upload_files:
-            try:
-                os.remove(os.path.join(app.config['UPLOAD_FOLDER'], file))
-            except:
-                pass
-        
-        # Clean up task entry (keep files for download)
+        # Clean up task entry and in-memory files
         processing_tasks.pop(task_id, None)
-        
         return jsonify({'status': 'cleaned'})
     
     return jsonify({'error': 'Task not found'}), 404
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Get port from environment variable (for Heroku compatibility)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=False, host='0.0.0.0', port=port)

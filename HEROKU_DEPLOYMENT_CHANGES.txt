@@ -1,0 +1,66 @@
+# Changes Log - Heroku Deployment Setup
+
+## Date: 5/22/2025
+
+### Changes Made:
+
+1. Added required Heroku configuration files:
+   - `Procfile`: Defines process types and commands for running the application
+   - `runtime.txt`: Specifies the Python version for Heroku
+
+2. Updated `requirements.txt` to include:
+   ```
+   gunicorn==21.2.0
+   ```
+
+3. Modified `app.py` for Heroku compatibility:
+   - Removed file system dependencies for uploads/outputs folders
+   - Implemented in-memory file processing
+   - Added PORT environment variable support for Heroku
+   - Updated file download endpoint to serve files directly from memory
+   - Simplified the cleanup process for memory-only storage
+
+4. Updated `.gitignore` file with Heroku-specific exclusions and best practices.
+
+5. Created `HEROKU_DEPLOYMENT.md` with detailed deployment instructions.
+
+### Implementation Details:
+
+1. **In-Memory File Processing**:
+   - Modified the file upload process to store file content in memory
+   - Created temporary files only during processing, then immediately cleaned up
+   - Stored generated Excel and log files in BytesIO objects in the task dictionary
+   - Updated download endpoint to serve files directly from memory using BytesIO
+
+2. **Heroku Configuration**:
+   - Created a Procfile with `web: gunicorn app:app` to tell Heroku how to run the app
+   - Specified Python 3.11.9 in runtime.txt
+   - Added port configuration to use Heroku's dynamic PORT environment variable
+
+3. **Environment Handling**:
+   - Updated app startup to check for PORT environment variable:
+   ```python
+   port = int(os.environ.get('PORT', 5000))
+   app.run(debug=False, host='0.0.0.0', port=port)
+   ```
+
+### Benefits:
+
+1. **Heroku Compatibility**: The application can now run on Heroku's ephemeral filesystem
+2. **Scalability**: Ready for deployment on Heroku's dynos
+3. **Memory-Only Processing**: No dependency on persistent storage
+4. **Simple Deployment**: Clear documentation and configuration files for easy deployment
+5. **Resource Efficiency**: Minimizes disk usage by keeping files in memory
+
+### Testing:
+
+The changes have been designed to:
+- Maintain all existing functionality while working with Heroku's constraints
+- Handle file processing entirely in memory when possible
+- Clean up temporary files immediately after use
+- Serve processed files directly from memory
+- Use Heroku's environment variables for configuration
+
+### Deployment:
+
+Follow the instructions in HEROKU_DEPLOYMENT.md to deploy the application to Heroku.

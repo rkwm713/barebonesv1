@@ -1,18 +1,37 @@
+# Virtual environments
 tutorial-env/
 .venv/
+venv/
+env/
+
+# Editor and IDE files
 .cursor/
-pycache/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python cache files
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.pyw
-*.pyz
-final_code_output.py/
+*.py[cod]
+*$py.class
+pycache/
+
+# Data files (exclude temp files but keep examples)
 *.xlsx
-*.json
+temp_*.json
 *.csv
 *.jsonl
 *.jsonl.gz
-*.jsonl.gz.part
-*.jsonl.gz.part.1
+*.jsonl.gz.part*
+
+# Heroku specific
+.env
+.env.local
+.DS_Store
+npm-debug.log
+node_modules/
+
+# Temporary files
+temp_*
+*.log
