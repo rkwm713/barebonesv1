@@ -16,6 +16,7 @@
 - Modified the backend to use FastAPI's APIRouter with the `/api` prefix
 - Moved all REST API endpoints to this router
 - Updated the WebSocket endpoint to include the `/api` prefix
+- Fixed the frontend WebSocket connection path to include `/api` prefix in production
 - See full details in `recaps/API_ROUTING_FIX.txt`
 
 ### 1. File Upload Not Working

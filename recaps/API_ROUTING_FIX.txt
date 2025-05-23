@@ -19,6 +19,8 @@ const API_BASE_URL = import.meta.env.DEV ? '' : '/api'
 However, the backend routes were not configured with this prefix, causing a mismatch. Additionally, when deployed to Heroku, there might be a proxy configuration that automatically adds the `/api` prefix, resulting in the double prefix (`/api/api/`).
 
 ## Solution
+
+### Part 1: Backend API Routing Fix
 Modified the backend to use FastAPI's APIRouter with the `/api` prefix:
 
 1. Imported APIRouter from FastAPI
@@ -27,10 +29,20 @@ Modified the backend to use FastAPI's APIRouter with the `/api` prefix:
 4. Updated the WebSocket endpoint to include the `/api` prefix
 5. Included the router in the main FastAPI app
 
-This change ensures that the backend routes will correctly handle requests with the `/api` prefix coming from the frontend client.
+### Part 2: Frontend WebSocket Path Fix
+Updated the frontend WebSocket connection to use the `/api` prefix in production:
+
+1. Modified `frontend/src/hooks/useTaskStatus.ts` to add the API base path to WebSocket URLs
+2. Added logic to use the correct API base URL based on environment:
+   ```typescript
+   const apiBase = import.meta.env.DEV ? '' : '/api'
+   const wsUrl = `${protocol}//${window.location.host}${apiBase}/ws/tasks/${taskId}`
+   ```
+
+These changes ensure that the backend routes and frontend client will correctly handle requests with the `/api` prefix, eliminating the double prefix issue.
 
 ## Testing
-After deploying this change, the application should properly handle API requests. No frontend changes were needed as the frontend was already configured correctly to use the `/api` prefix.
+After deploying these changes, the application should properly handle both API requests and WebSocket connections. The frontend now correctly uses the `/api` prefix for WebSocket connections in production, matching the updated backend routes.
 
 ## Future Considerations
 - For any new API endpoints, ensure they are added to the api_router, not directly to the app

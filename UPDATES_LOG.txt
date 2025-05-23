@@ -427,3 +427,60 @@ Based on investigation and testing, `_effective_moves` values should be treated 
 **Impact**: Eliminates calculation inconsistencies between different attachment height scenarios
 
 **Development Note**: This fix ensures the barebones processor handles `_effective_moves` consistently as specified in the Katapult data structure - as direct movement values requiring no mathematical transformation.
+
+---
+
+## Heroku Deployment Fixes
+
+### API Routing Fix (Current Session)
+
+**PROBLEM IDENTIFIED:**
+- 405 Method Not Allowed error in Heroku logs when making API requests
+- Requests to `/api/api/upload` were failing (notice the double `/api/api/` prefix)
+- Error: `INFO: 50.24.172.246:0 - "POST /api/api/upload HTTP/1.1" 405 Method Not Allowed`
+- Error: `sock=backend at=error code=H18 desc="Server Request Interrupted" method=POST path="/api/api/upload"`
+
+**ROOT CAUSE ANALYSIS:**
+- Frontend client (frontend/src/api/client.ts) sets base URL to `/api` in production mode:
+  ```typescript
+  const API_BASE_URL = import.meta.env.DEV ? '' : '/api'
+  ```
+- Backend FastAPI routes were defined without the `/api` prefix (e.g., `/upload`, `/tasks/{task_id}/status`)
+- When deployed to Heroku, a proxy configuration was automatically adding an `/api` prefix
+- This resulted in double prefixing: `/api/api/upload` instead of just `/api/upload`
+
+**SOLUTION IMPLEMENTED:**
+1. **Created API Router with Prefix**:
+   ```python
+   # Create API router with prefix
+   api_router = APIRouter(prefix="/api")
+   ```
+
+2. **Moved All API Routes to the Router**:
+   - Changed `@app.post("/upload")` to `@api_router.post("/upload")`
+   - Changed `@app.get("/tasks/{task_id}/status")` to `@api_router.get("/tasks/{task_id}/status")`
+   - Changed `@app.get("/tasks/{task_id}/download/{file_type}")` to `@api_router.get("/tasks/{task_id}/download/{file_type}")`
+   - Changed `@app.delete("/tasks/{task_id}")` to `@api_router.delete("/tasks/{task_id}")`
+
+3. **Updated WebSocket Endpoint Path**:
+   - Changed `@app.websocket("/ws/tasks/{task_id}")` to `@app.websocket("/api/ws/tasks/{task_id}")`
+
+4. **Included Router in the Main App**:
+   ```python
+   # Include the API router in the main app
+   app.include_router(api_router)
+   ```
+
+**TECHNICAL VERIFICATION:**
+- ✅ Backend now properly handles requests with the `/api` prefix
+- ✅ Frontend continues to work as expected (already configured for `/api` prefix)
+- ✅ No changes needed to frontend code
+- ✅ WebSocket endpoint updated to maintain consistent API path structure
+
+**FILES MODIFIED:**
+- `backend/app.py`: Updated routing configuration
+- Created `recaps/API_ROUTING_FIX.txt`: Detailed documentation of the fix
+- Updated `recaps/FIXES_SUMMARY.txt`: Added the API routing fix to the summary
+
+**STATUS**: ✅ **FIX COMPLETE**
+**DOCUMENTATION**: Full details available in `recaps/API_ROUTING_FIX.txt`

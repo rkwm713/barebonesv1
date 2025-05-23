@@ -32,7 +32,8 @@ export function useTaskStatus(taskId: string | null, options: UseTaskStatusOptio
 
     // Try WebSocket first for real-time updates
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/ws/tasks/${taskId}`
+    const apiBase = import.meta.env.DEV ? '' : '/api'
+    const wsUrl = `${protocol}//${window.location.host}${apiBase}/ws/tasks/${taskId}`
     
     let wsConnected = false
     
