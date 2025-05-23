@@ -1,0 +1,37 @@
+EQUIPMENT TYPE FALLBACK UPDATE
+==============================
+
+Date: 5/22/2025
+
+SUMMARY:
+--------
+Modified the code to implement a fallback mechanism for equipment_type when it's missing in trace_data. 
+The code will now check the photofirst item's own equipment_type field when the trace_data doesn't provide this information.
+
+CHANGES MADE:
+------------
+1. Located the equipment category handling section in the get_attachers_for_node method
+2. Added fallback logic to check item_value.get("equipment_type") when trace_info.get("equipment_type") is empty
+3. Added debug logging to track when the fallback is used
+
+CODE CHANGES:
+------------
+Added the following code to the equipment category processing section:
+
+```python
+elif category == "equipment":
+    item_type_str = trace_info.get("equipment_type", "").strip()
+    if not item_type_str:
+        # fallback to the item's own field
+        item_type_str = item_value.get("equipment_type", "").strip()
+        print(f"DEBUG: Fallback to photofirst equipment_type for item in node {node_id}: {item_type_str}")
+```
+
+BENEFITS:
+--------
+1. Improved data capture for equipment items
+2. Reduced skipped items due to missing equipment_type values
+3. Better representation of field equipment in the output reports
+4. Added debug logging for easier troubleshooting
+
+This update ensures more complete equipment data processing by using all available information from both trace_data and photofirst data.

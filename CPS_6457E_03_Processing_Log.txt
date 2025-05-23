@@ -1,0 +1,93 @@
+=== PROCESSING SUMMARY ===
+Date: 2025-05-22 22:22:56
+
+NODE STATISTICS:
+- Total nodes processed: 7
+- Nodes with neutral wire: 7 (100.0%)
+- Nodes without neutral: 0 (0.0%)
+
+ITEM STATISTICS:
+- Total items found: 66
+  - Wire items: 49
+  - Equipment items: 12
+  - Guying items: 5
+
+ITEMS PROCESSED: 50 (75.8%)
+ITEMS SKIPPED: 16 (24.2%)
+
+SKIP REASON BREAKDOWN:
+- Primary wire (skipped): 7 (43.8%)
+- Missing company ('Charter') or type (''): 5 (31.2%)
+- Above neutral height (324.73"): 4 (25.0%)
+
+DETAILED NODE LOGS (first 10 nodes with skipped items):
+
+[Node ID: -OJ_QO1-g_v02hBjKOt6, SCID: 001]
+- Neutral height: 29'-6"
+- Items: 8 total (7 processed, 1 skipped)
+  ✗ CPS ENERGY Primary - Primary wire (skipped)
+  ✓ CPS ENERGY Neutral (29'-6")
+  ✓ CPS ENERGY Supply Fiber (28'-0")
+  ✓ AT&T Fiber Optic Com (23'-7")
+  ✓ AT&T Telco Com (22'-4")
+  ... and 3 more items
+
+[Node ID: -OJif6kQEblo9j4gD6-l, SCID: 003]
+- Neutral height: 27'-3"
+- Items: 9 total (7 processed, 2 skipped)
+  ✗ CPS ENERGY Primary - Primary wire (skipped)
+  ✓ CPS ENERGY Neutral (27'-3")
+  ✓ CPS ENERGY Supply Fiber (25'-9")
+  ✓ AT&T Fiber Optic Com (22'-8")
+  ✓ AT&T Telco Com (21'-8")
+  ... and 4 more items
+
+[Node ID: -OJif6kQEblo9j4gD6-l, SCID: 003]
+- Neutral height: 27'-3"
+- Items: 9 total (7 processed, 2 skipped)
+  ✗ CPS ENERGY Primary - Primary wire (skipped)
+  ✓ CPS ENERGY Neutral (27'-3")
+  ✓ CPS ENERGY Supply Fiber (25'-9")
+  ✓ AT&T Fiber Optic Com (22'-8")
+  ✓ AT&T Telco Com (21'-8")
+  ... and 4 more items
+
+[Node ID: -OJ_QKaoQC9V_pOdD7pb, SCID: 004]
+- Neutral height: 25'-11"
+- Items: 9 total (8 processed, 1 skipped)
+  ✗ CPS ENERGY Primary - Primary wire (skipped)
+  ✓ CPS ENERGY Neutral (26'-0")
+  ✓ CPS ENERGY Supply Fiber (24'-6")
+  ✓ AT&T Fiber Optic Com (22'-9")
+  ✓ AT&T Telco Com (21'-7")
+  ... and 4 more items
+
+[Node ID: -OJ_QBhaCD9_C4-gzvKc, SCID: 005]
+- Neutral height: 27'-0"
+- Items: 15 total (9 processed, 6 skipped)
+  ✗ CPS ENERGY Primary - Primary wire (skipped)
+  ✓ CPS ENERGY Neutral (27'-1")
+  ✗ CPS ENERGY Street Light Feed - Above neutral height (324.73")
+  ✓ CPS ENERGY Supply Fiber (25'-10")
+  ✓ AT&T Fiber Optic Com (21'-6")
+  ... and 10 more items
+
+[Node ID: -OJ_PMjpiNrD4UyT0JSz, SCID: 011]
+- Neutral height: 26'-5"
+- Items: 8 total (6 processed, 2 skipped)
+  ✗ CPS ENERGY Primary - Primary wire (skipped)
+  ✓ CPS ENERGY Neutral (26'-6")
+  ✓ CPS ENERGY Supply Fiber (25'-5")
+  ✓ AT&T Fiber Optic Com (22'-10")
+  ✓ AT&T Telco Com (21'-10")
+  ... and 3 more items
+
+[Node ID: -OJ_PMjpiNrD4UyT0JSz, SCID: 011]
+- Neutral height: 26'-5"
+- Items: 8 total (6 processed, 2 skipped)
+  ✗ CPS ENERGY Primary - Primary wire (skipped)
+  ✓ CPS ENERGY Neutral (26'-6")
+  ✓ CPS ENERGY Supply Fiber (25'-5")
+  ✓ AT&T Fiber Optic Com (22'-10")
+  ✓ AT&T Telco Com (21'-10")
+  ... and 3 more items

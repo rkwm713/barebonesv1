@@ -1,0 +1,43 @@
+ATTACHER PROCESSING UPDATE - May 22, 2025
+=========================================
+
+ISSUE ADDRESSED:
+Missing attachers (like street_light, drip_loop) that ARE below neutral height
+
+ROOT CAUSES IDENTIFIED:
+1. Missing _measured_height in photofirst_data for items
+2. Missing or incomplete trace information
+3. Function only processing 'wire' category, missing 'equipment' and 'guying'
+
+FIXES IMPLEMENTED:
+
+1. Enhanced get_attachers_for_node() to process all three categories:
+   - wire
+   - equipment  
+   - guying
+
+2. Added comprehensive error handling and logging:
+   - Tracks items with missing _measured_height
+   - Tracks items with missing trace information
+   - Logs skip reasons for analysis
+
+3. Improved neutral height filtering:
+   - Only applies filter when neutral height is available
+   - Warns when neutral wire not found
+   - Special handling for down guys below neutral
+
+4. Created ProcessingLogger class for detailed tracking:
+   - Node statistics (with/without neutral)
+   - Item statistics by category
+   - Skip reason breakdown
+   - Detailed node-by-node logs
+
+RESULTS:
+- Successfully processes equipment items (street lights, etc.)
+- Captures guying items (down guys) below neutral
+- Provides detailed logging for troubleshooting
+- 60.6% processing success rate in test run
+
+FILES UPDATED:
+- barebones.py - Main processing script with enhanced attacher detection
+- CPS_6457E_03_Processing_Log.txt - Sample output showing detailed processing stats

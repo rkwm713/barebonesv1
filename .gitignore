@@ -1,0 +1,10 @@
+tutorial-env/
+.venv/
+.cursor/
+pycache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
