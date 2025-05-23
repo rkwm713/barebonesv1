@@ -11,13 +11,14 @@
   - [x] Implement unique (timestamped) filenames for Excel and log files in `FileProcessor`.
   - [x] Add `try...finally` block to `create_output_excel` for robust writer closing.
   - [x] Remove debug prints from `format_height_feet_inches`.
+  - [x] Correct logic in `format_height_feet_inches` to prevent "X' 12"" results.
   - [x] Update `main()` in `barebones.py` for better local testing.
   - [ ] Further enhance error handling within `create_output_excel` for cell merging and formatting.
 - **File Serving (Flask & FastAPI):**
   - [x] Update Flask app (`app.py`) to correctly initialize `FileProcessor` with output directory.
   - [x] Update FastAPI app (`backend/app.py`) to correctly initialize `FileProcessor` with output directory.
   - [x] Update Flask app (`app.py`) to locate and serve uniquely named files from `FileProcessor`.
-  - [x] Update FastAPI app (`backend/app.py`) to locate and serve uniquely named files from `FileProcessor`.
+  - [x] Update FastAPI app (`backend/app.py`) to locate and serve uniquely named files from `FileProcessor` (including correct prefix search).
   - [x] Add `Content-Length` header to download responses in Flask app.
   - [x] Add `Content-Length` header to download responses in FastAPI app.
 - **Logging & Monitoring:**
@@ -46,8 +47,7 @@
 - Modified `FileProcessor.process_files` to use timestamped unique filenames for Excel and log outputs.
 - Updated `FileProcessor.create_output_excel` to use a `try...finally` block, ensuring `ExcelWriter` is closed.
 - Removed debug `print` statements from `FileProcessor.format_height_feet_inches`.
-- Improved `main` function in `barebones.py` for local testing.
-- Updated Flask app (`app.py`) `process_file` to correctly instantiate `FileProcessor` and find unique output files.
+- Corrected logic in `FileProcessor.format_height_feet_inches` to prevent "X' 12"" height formatting errors.
 - Updated FastAPI app (`backend/app.py`) `process_file_sync` to correctly instantiate `FileProcessor` and find unique output files.
 - Added `Content-Length` header to download responses in `app.py`.
 - Added `Content-Length` header to download responses in `backend/app.py`.

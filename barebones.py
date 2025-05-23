@@ -177,25 +177,24 @@ class FileProcessor:
     def format_height_feet_inches(self, total_in):
         if not isinstance(total_in, (int, float)):
             # Consider logging this as a warning if it's unexpected
-            # print(f"DEBUG_FORMAT: Invalid input type for total_in: {total_in} (type: {type(total_in)})")
             return ""
 
-        _feet_div, _rem_div = divmod(total_in, 12)
-        _feet_int = int(_feet_div)
-        _inches_round = round(_rem_div)
+        # Ensure we are working with a value that can be accurately processed by divmod
+        # Round to nearest inch first to handle potential floating point inaccuracies from source data
+        # then convert to integer for divmod.
+        try:
+            processed_total_in = int(round(float(total_in)))
+        except (ValueError, TypeError):
+            # Log error or return empty if conversion fails
+            return ""
 
-        feet = _feet_int
-        inches = _inches_round
-
-        if inches == 12:
-            feet += 1
-            inches = 0
+        feet, inches = divmod(processed_total_in, 12)
+        
+        # The divmod operation itself should handle the 12 inches case correctly,
+        # as 'inches' will be the remainder, which should be < 12.
+        # No explicit 'if inches == 12:' check should be needed if input is processed correctly.
 
         result = f"{feet}'-{inches}\""
-        # The specific error check for "24'-12\"" might indicate a deeper logic issue
-        # if it occurs frequently. For now, removing the print.
-        # if result == "24'-12\"":
-        #     print(f"ERROR_OUTPUT_DETECTED: For total_in={total_in}, got {result}. Intermediate: feet_div={_feet_div}, rem_div={_rem_div}, feet_int={_feet_int}, inches_round={_inches_round}, final_feet={feet}, final_inches={inches}")
         return result
 
     def get_attachers_from_node_trace(self, job_data, node_id):
