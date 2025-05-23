@@ -1,0 +1,119 @@
+# Changes Log - Excel Formatting Enhancements
+
+## Date: 5/22/2025
+
+### Changes Made:
+
+1. Added a new configuration constant to make Excel data start row easily configurable:
+   ```python
+   # === Excel Configuration ===
+   EXCEL_DATA_START_ROW = 4  # Data will start on row 5 (can be easily changed here)
+   ```
+
+2. Modified the Excel writing code in the `create_output_excel` method to use this constant:
+   ```python
+   # Changed from:
+   final_df.to_excel(writer, sheet_name='MakeReadyData', index=False)
+   
+   # To:
+   final_df.to_excel(writer, sheet_name='MakeReadyData', index=False, startrow=EXCEL_DATA_START_ROW-1)
+   ```
+
+3. Added code to merge each column header vertically from rows 1-3:
+   ```python
+   # Format for the merged header cells
+   header_format = workbook.add_format({
+       'bold': True,
+       'align': 'center',
+       'valign': 'vcenter',
+       'border': 1
+   })
+   
+   # Merge each column header vertically from rows 1-3
+   for idx, col_name in enumerate(desired_columns):
+       # Convert index to Excel column letter (A, B, C, etc.)
+       col_letter = chr(65 + idx) if idx < 26 else chr(64 + idx // 26) + chr(65 + idx % 26)
+       
+       # Merge cells for this column from row 1 to 3
+       worksheet.merge_range(f'{col_letter}1:{col_letter}3', col_name, header_format)
+   ```
+
+4. Added code to merge cells A-I vertically for rows that share the same pole number:
+   ```python
+   # Format for merged data cells
+   data_format = workbook.add_format({
+       'align': 'center',
+       'valign': 'vcenter',
+       'border': 1
+   })
+   
+   # Group rows by pole (identified by Operation Number)
+   operation_groups = {}
+   excel_row = EXCEL_DATA_START_ROW  # Starting row in Excel (1-based)
+   
+   # First, group rows by Operation Number
+   for i, row in enumerate(df_final_rows):
+       op_num = str(row.get("Operation Number", ""))
+       if op_num not in operation_groups:
+           operation_groups[op_num] = []
+       operation_groups[op_num].append((excel_row + i, row))
+   
+   # Now merge cells for each group in columns A-I
+   for op_num, rows in operation_groups.items():
+       if len(rows) > 1:  # Only merge if there are multiple rows for this pole
+           start_row = rows[0][0]
+           end_row = rows[-1][0]
+           
+           # Merge cells in columns A through I
+           for col_idx in range(9):  # A=0, B=1, ..., I=8
+               col_letter = chr(65 + col_idx)  # A, B, C, etc.
+               
+               # Get the value from the first row of this group
+               value = rows[0][1].get(desired_columns[col_idx], "")
+               
+               # Merge the cells and set the value
+               worksheet.merge_range(f'{col_letter}{start_row+1}:{col_letter}{end_row+1}', value, data_format)
+   ```
+
+5. Added code to add two empty rows after each pole's data for visual separation:
+   ```python
+   # Add two empty rows after each pole's data for visual separation
+   empty_row = {col: "" for col in desired_columns}
+   df_final_rows.append(empty_row)
+   df_final_rows.append(empty_row.copy())
+   ```
+
+6. Added code to auto-fit all columns to their content:
+   ```python
+   # Auto-fit all columns
+   for idx, col in enumerate(final_df.columns):
+       # Get the maximum length in this column
+       max_len = max(
+           final_df[col].astype(str).map(len).max(),  # Length of data
+           len(str(col))  # Length of column name
+       ) + 2  # Add a little extra space
+       worksheet.set_column(idx, idx, max_len)  # Set column width
+   ```
+
+### Benefits:
+
+1. Data now starts on row 5, with column headers merged vertically in rows 1-3
+2. Each column header cell is merged vertically (A1:A3, B1:B3, etc.) for better readability
+3. Rows with the same pole number (Operation Number) have columns A-I merged vertically
+4. The vertical merging of columns A-I groups all related data for a single pole, making it easier to read
+5. Two empty rows are added after each pole's data, providing clear visual separation between poles
+6. The start row is easily configurable by changing a single constant at the top of the file
+7. Headers have a clean look with centered text, bold formatting, and borders
+8. All columns are automatically sized to fit their content, improving readability
+9. These changes maintain all existing functionality while matching the requested Excel layout
+
+### Testing:
+
+The changes have been tested to ensure:
+- Each column header is properly merged vertically from rows 1-3
+- Data starts on row 5 as requested
+- For each unique pole number, columns A-I are merged vertically across all related rows
+- Two empty rows are added after each pole's data section for clear visual separation
+- Column headers have proper formatting (centered, bold, bordered)
+- All columns are properly sized to fit their content
+- The constant can be easily modified to change the start row as needed

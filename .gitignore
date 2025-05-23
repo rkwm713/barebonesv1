@@ -8,3 +8,11 @@ __pycache__/
 *.pyd
 *.pyw
 *.pyz
+final_code_output.py/
+*.xlsx
+*.json
+*.csv
+*.jsonl
+*.jsonl.gz
+*.jsonl.gz.part
+*.jsonl.gz.part.1

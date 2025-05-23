@@ -16,6 +16,9 @@ SPAN_MR_MOVE = "Span MR Move"
 SPAN_EFFECTIVE_MOVE = "Span Effective Move"
 SPAN_PROPOSED_HEIGHT = "Mid-Span Proposed"
 
+# === Excel Configuration ===
+EXCEL_DATA_START_ROW = 4  # Data will start on row 5 (can be easily changed here)
+
 
 class ProcessingLogger:
     """Logger to track processing details and skipped items"""
@@ -1608,9 +1611,10 @@ class FileProcessor:
         """Create a simplified Excel output with flat single sheet structure"""
         
         # Define columns for the flat single sheet
+        # Connection ID and SCID are excluded from Excel output but kept in DataFrame for processing
         desired_columns = [
-            "Connection ID", "Operation Number", "Attachment Action", "Pole Owner", 
-            "Pole #", "SCID", "Pole Structure", "Proposed Riser", "Proposed Guy", 
+            "Operation Number", "Attachment Action", "Pole Owner", 
+            "Pole #", "Pole Structure", "Proposed Riser", "Proposed Guy", 
             "PLA (%) with proposed attachment", "Construction Grade of Analysis",
             "Height Lowest Com", "Height Lowest CPS Electrical", 
             "Data Category", "Bearing", "Attacher Description",
@@ -1623,6 +1627,8 @@ class FileProcessor:
         
         # Create Excel writer
         writer = pd.ExcelWriter(path, engine='xlsxwriter')
+        # Get the workbook and worksheet objects to apply formatting
+        workbook = writer.book
         
         # List to store all final rows
         df_final_rows = []
@@ -1834,10 +1840,95 @@ class FileProcessor:
                     row["Mid-Span (same span as existing)"] = ""
                     # Keep Movement Summary and Remedy Description for pole-only rows
                     df_final_rows.append(row)
+                
+                # First row: Add headers "From Pole" and "To Pole"
+                header_row = {col: "" for col in desired_columns}
+                header_row["Height Lowest Com"] = "From Pole"  # Column J
+                header_row["Height Lowest CPS Electrical"] = "To Pole"  # Column K
+                df_final_rows.append(header_row)
+                
+                # Second row: Add the actual pole values
+                values_row = {col: "" for col in desired_columns}
+                # Get the "From Pole" value (current pole number)
+                from_pole_value = base_row_data.get("Pole #", "")
+                # Get the "To Pole" value (destination pole)
+                to_pole_value = base_row_data.get("To Pole", "")
+                # Add the values to the second row
+                values_row["Height Lowest Com"] = from_pole_value  # Value for From Pole in Column J
+                values_row["Height Lowest CPS Electrical"] = to_pole_value  # Value for To Pole in Column K
+                df_final_rows.append(values_row)
         
         # Create final DataFrame and write to Excel
         final_df = pd.DataFrame(df_final_rows, columns=desired_columns)
-        final_df.to_excel(writer, sheet_name='MakeReadyData', index=False)
+        # Write data starting at the configured row (Excel is 1-based, pandas is 0-based)
+        final_df.to_excel(writer, sheet_name='MakeReadyData', index=False, startrow=EXCEL_DATA_START_ROW-1)
+        
+        # Get the worksheet after writing the data
+        worksheet = writer.sheets['MakeReadyData']
+        
+        # Format for the merged header cells
+        header_format = workbook.add_format({
+            'bold': True,
+            'align': 'center',
+            'valign': 'vcenter',
+            'border': 1
+        })
+        
+        # Format for merged data cells
+        data_format = workbook.add_format({
+            'align': 'center',
+            'valign': 'vcenter',
+            'border': 1
+        })
+        
+        # Merge each column header vertically from rows 1-3
+        for idx, col_name in enumerate(desired_columns):
+            # Convert index to Excel column letter (A, B, C, etc.)
+            col_letter = chr(65 + idx) if idx < 26 else chr(64 + idx // 26) + chr(65 + idx % 26)
+            
+            # Merge cells for this column from row 1 to 3
+            worksheet.merge_range(f'{col_letter}1:{col_letter}3', col_name, header_format)
+        
+        # Now merge cells for columns A-I for each unique pole
+        # Group rows by pole (identified by Operation Number)
+        operation_groups = {}
+        excel_row = EXCEL_DATA_START_ROW  # Starting row in Excel (1-based)
+        
+        # First, group rows by Operation Number, skipping empty rows
+        for i, row in enumerate(df_final_rows):
+            op_num = str(row.get("Operation Number", ""))
+            # Skip empty rows (they have empty Operation Number)
+            if not op_num:
+                continue
+                
+            if op_num not in operation_groups:
+                operation_groups[op_num] = []
+            operation_groups[op_num].append((excel_row + i, row))
+        
+        # Now merge cells for each group in columns A-I
+        for op_num, rows in operation_groups.items():
+            if len(rows) > 1:  # Only merge if there are multiple rows for this pole
+                start_row = rows[0][0]
+                end_row = rows[-1][0]
+                
+                # Merge cells in columns A through I
+                for col_idx in range(9):  # A=0, B=1, ..., I=8
+                    col_letter = chr(65 + col_idx)  # A, B, C, etc.
+                    
+                    # Get the value from the first row of this group
+                    value = rows[0][1].get(desired_columns[col_idx], "")
+                    
+                    # Merge the cells and set the value
+                    worksheet.merge_range(f'{col_letter}{start_row+1}:{col_letter}{end_row+1}', value, data_format)
+        
+        # Auto-fit all columns
+        for idx, col in enumerate(final_df.columns):
+            # Get the maximum length in this column
+            max_len = max(
+                final_df[col].astype(str).map(len).max(),  # Length of data
+                len(str(col))  # Length of column name
+            ) + 2  # Add a little extra space
+            worksheet.set_column(idx, idx, max_len)  # Set column width
         
         writer.close()
         print(f"Excel file created: {path}")
@@ -1930,9 +2021,9 @@ def main():
     processor = FileProcessor()
     processed_dataframe = processor.process_data(job_data, None)  # Pass None for geojson_data
 
-    output_filename = f"{os.path.splitext(os.path.basename(job_json_path))[0]}_MakeReady_Output_v2.xlsx"
-    # Consider adding versioning if file exists, or just overwrite for now
-    # output_path = os.path.join(os.path.expanduser("~"), "Downloads", output_filename)
+    # Generate a unique filename with timestamp to avoid permission errors
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_filename = f"{os.path.splitext(os.path.basename(job_json_path))[0]}_MakeReady_Output_{timestamp}.xlsx"
     output_path = output_filename  # Simpler path for testing
 
     print(f"Creating Excel report at: {output_path}")
