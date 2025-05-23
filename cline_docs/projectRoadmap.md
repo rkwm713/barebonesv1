@@ -16,6 +16,7 @@
   - [x] Update `main()` in `barebones.py` for better local testing.
   - [x] Implement accurate reference span identification and "Ref (...)" block generation in `barebones.py` as per playbook.
   - [x] Conditionally populate "Mid-Span (same span as existing)" column in `create_output_excel` based on whether the main pole attacher is new or has moved.
+  - [x] Fix "refs" sheet data population in `barebones.py`, including fresh `attacher_data` fetching, refined "002.A" logic, and correct column mapping for `Ref_Span_Attacher` rows.
   - [ ] Further enhance error handling within `create_output_excel` for cell merging and formatting.
 - **File Serving (Flask & FastAPI):**
   - [x] Update Flask app (`app.py`) to correctly initialize `FileProcessor` with output directory.
@@ -61,3 +62,4 @@
 - Implemented new logic in `barebones.py` for identifying and processing reference spans, including new helper functions (`get_scid_from_node_data`, `is_reference_connection`) and an overhaul of `get_reference_attachers`. Updated `create_output_excel` for correct reference span header text.
 - Updated `FileProcessor.create_output_excel` to conditionally populate the "Mid-Span (same span as existing)" column for main pole attachers only if the pole attacher is new or has moved.
 - Created `userInstructions/local_testing_setup.md` with detailed steps for setting up and running the application locally.
+- Corrected "refs" sheet data population in `barebones.py`: ensured fresh `attacher_data` for each pole, refined "002.A" pole handling, and adjusted data mapping for columns P & Q for `Ref_Span_Attacher` rows.

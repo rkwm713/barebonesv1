@@ -96,6 +96,11 @@ This project is a web application designed to process uploaded JSON files and ge
     - This change addresses issues like the PL410620 bug where non-reference spans were incorrectly labeled.
 - **Midspan Proposed Height Logic (2025-05-23):**
     - Modified `FileProcessor.create_output_excel` so that the "Mid-Span (same span as existing)" column for main pole attachers is populated only if the pole attacher has a non-empty `proposed_height` (i.e., it's new or has moved). Otherwise, this midspan column is left blank for that attacher.
+- **"Refs" Sheet Data Population Fixes (2025-05-23):**
+    - In `FileProcessor.create_output_excel` (for the "refs" sheet generation):
+        - Ensured `attacher_data` is fetched fresh for each main pole being processed, providing correct context for `main_pole_attachers_lookup`.
+        - Implemented a `data_actually_written_for_pole_refs` flag to accurately control the fallback logic for "002.A" poles, ensuring the placeholder row is added only when no other reference data from that pole is written.
+        - Adjusted data mapping for `Ref_Span_Attacher` rows: Column P (index 6) now gets `mid_span_proposed_h`, and Column Q (index 7) gets `mid_span_existing_h`.
 
 ## User Feedback Integration and Its Impact on Development
 - The primary driver for recent changes was user reports of "corrupted Excel files."

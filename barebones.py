@@ -2039,7 +2039,9 @@ class FileProcessor:
                 if not node_id_main:
                     continue
 
-                # `attacher_data` is already fetched earlier in this loop for the MakeReadyData sheet.
+                # Fetch attacher_data for the current main pole being processed for the "refs" sheet
+                attacher_data = self.get_attachers_for_node(job_data, node_id_main)
+                
                 main_pole_attachers_lookup = {
                     att['name']: {
                         'existing': att['existing_height'],
@@ -2047,10 +2049,10 @@ class FileProcessor:
                     } for att in attacher_data.get('main_attachers', [])
                 }
 
-                pole_has_outgoing_refs = False
+                data_actually_written_for_pole_refs = False # Initialize flag for "002.A" logic
                 if attacher_data and 'reference_spans' in attacher_data:
                     for ref_span_detail in attacher_data['reference_spans']:
-                        pole_has_outgoing_refs = True
+                        # pole_has_outgoing_refs = True # This line is no longer needed / replaced by data_actually_written_for_pole_refs
                         ref_structure_scid = ref_span_detail.get('ref_scid', 'Unknown Ref SCID')
                         
                         for attacher_on_ref_span in ref_span_detail.get('data', []):
@@ -2066,15 +2068,16 @@ class FileProcessor:
                             ref_sheet.write(ref_row_num, 1, scid_main)
                             ref_sheet.write(ref_row_num, 2, ref_structure_scid)
                             ref_sheet.write(ref_row_num, 3, attacher_name)
-                            ref_sheet.write(ref_row_num, 4, main_pole_existing_h)
-                            ref_sheet.write(ref_row_num, 5, main_pole_proposed_h)
-                            ref_sheet.write(ref_row_num, 6, mid_span_existing_h)
-                            ref_sheet.write(ref_row_num, 7, mid_span_proposed_h)
+                            ref_sheet.write(ref_row_num, 4, main_pole_existing_h) # Column N: Main Pole Existing Height
+                            ref_sheet.write(ref_row_num, 5, main_pole_proposed_h) # Column O: Main Pole Proposed Height
+                            ref_sheet.write(ref_row_num, 6, mid_span_proposed_h)  # Column P: Mid-Span Proposed Height (Header: Mid-Span Existing Height)
+                            ref_sheet.write(ref_row_num, 7, mid_span_existing_h)  # Column Q: Mid-Span Existing Height (Header: Mid-Span Proposed Height)
+                            data_actually_written_for_pole_refs = True # Set flag as data was written
                             ref_row_num += 1
                 
                 # Check for "002.A" SCID for the main pole
                 if "002.A" in str(scid_main):
-                    if not pole_has_outgoing_refs: # Only add if it wasn't already listed as a source of ref spans
+                    if not data_actually_written_for_pole_refs: # Only add if no ref data was actually written for this pole
                         ref_sheet.write(ref_row_num, 0, pole_number_main)
                         ref_sheet.write(ref_row_num, 1, scid_main)
                         ref_sheet.write(ref_row_num, 2, "N/A - Pole is 002.A") 

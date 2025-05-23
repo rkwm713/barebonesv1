@@ -28,3 +28,9 @@ Updated functionality in `barebones.py` for the "refs" sheet in the output Excel
         - The "Main Pole Existing Height" and "Main Pole Proposed Height" columns are populated with these values.
     - For "002.A" SCID poles (that don't have outgoing references), the main pole height columns will be blank or "N/A".
     - Adjusted column auto-fitting for the new set of columns.
+
+**Fourth Update (Bug Fix - "refs" sheet data population):**
+- Refined the logic in `FileProcessor.create_output_excel` for populating the "refs" sheet to correctly handle "002.A" SCID poles.
+- Introduced a flag `data_written_for_this_main_pole_from_its_refs` which is set to `True` if any attacher data from any of its reference spans is actually written to the sheet.
+- A pole with a "002.A" SCID will now only get its specific "002.A" line if no data rows were generated from its outgoing reference spans (i.e., if all its reference spans had no listable mid-span attachers or it had no reference spans at all). This prevents 002.A poles that *do* successfully list ref span attachers from getting a redundant "Pole SCID is 002.A" line.
+- Ensured that the loop for reference span attachers only attempts to write rows if `ref_span_detail.get('data')` (the list of attachers for that specific span) is not empty.

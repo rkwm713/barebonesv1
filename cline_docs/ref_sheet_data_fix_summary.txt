@@ -1,0 +1,23 @@
+Summary of Fixes for "Refs" Sheet Data Population in barebones.py (2025-05-23)
+
+This document summarizes the changes made to `barebones.py` within the `create_output_excel` method to address issues with the "refs" sheet (the second sheet in the generated Excel report).
+
+1.  **Stale `attacher_data` Resolved:**
+    *   **Issue:** The `attacher_data` (and consequently `main_pole_attachers_lookup`) was being fetched only once outside the loop that iterates through main poles for the "refs" sheet. This meant that the lookup for main pole attacher heights was using data from the first pole processed for all subsequent poles, leading to incorrect "Main Pole Existing/Proposed Height" values for reference spans.
+    *   **Fix:** The line `attacher_data = self.get_attachers_for_node(job_data, node_id_main)` was moved *inside* the loop: `for _, record in df.iterrows():`. This ensures that for each main pole (`node_id_main`) being processed for the "refs" sheet, its specific attacher data is fetched, providing the correct context for `main_pole_attachers_lookup`.
+
+2.  **Refined "002.A" Pole Fallback Logic:**
+    *   **Issue:** The previous logic for adding a placeholder row for poles with SCID "002.A" (which typically don't have outgoing reference spans but should be listed) was potentially incorrect if a "002.A" pole *did* somehow have reference data written.
+    *   **Fix:**
+        *   A new boolean flag `data_actually_written_for_pole_refs` was introduced and initialized to `False` at the start of processing each main pole for the "refs" sheet.
+        *   This flag is set to `True` if any `Ref_Span_Attacher` data row is successfully written to the sheet for the current main pole.
+        *   The condition for writing the "002.A" placeholder row was changed from `if not pole_has_outgoing_refs:` to `if not data_actually_written_for_pole_refs:`. This ensures the placeholder is only added if no other reference data from that specific "002.A" pole was actually outputted to the sheet.
+
+3.  **Corrected Column Data Mapping for `Ref_Span_Attacher` Rows:**
+    *   **Issue:** The data being written to columns P ("Mid-Span Existing Height") and Q ("Mid-Span Proposed Height") for `Ref_Span_Attacher` rows needed to be swapped based on user requirements.
+    *   **Fix:** The `ref_sheet.write()` calls for these columns were updated:
+        *   Column P (index 6) now correctly receives `mid_span_proposed_h`.
+        *   Column Q (index 7) now correctly receives `mid_span_existing_h`.
+    *   The headers for these columns ("Mid-Span Existing Height" and "Mid-Span Proposed Height" respectively) remain unchanged as per the scope of the fix.
+
+These changes collectively ensure that the "refs" sheet is populated with more accurate and contextually correct data, particularly concerning the heights of attachers on main poles that are sources of reference spans, the handling of "002.A" poles, and the specific data points for mid-span heights.
