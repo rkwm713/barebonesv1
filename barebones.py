@@ -1840,7 +1840,13 @@ class FileProcessor:
                         row["Attacher Description"] = attacher.get('name', '')
                         row["Attachment Height - Existing"] = attacher.get('existing_height', '')
                         row["Attachment Height - Proposed"] = attacher.get('proposed_height', '')
-                        row["Mid-Span (same span as existing)"] = self.get_midspan_proposed_heights(job_data, connection_id, attacher.get('name', ''))
+                        
+                        # New logic for "Mid-Span (same span as existing)" based on feedback
+                        midspan_val_to_set = ""
+                        # If the pole attachment has a proposed height (meaning it's new or moved)
+                        if attacher.get('proposed_height'): 
+                            midspan_val_to_set = self.get_midspan_proposed_heights(job_data, connection_id, attacher.get('name', ''))
+                        row["Mid-Span (same span as existing)"] = midspan_val_to_set
                         
                         # For the flat sheet structure, only put Movement Summary and Remedy Description in the first main attacher row
                         if i > 0:
@@ -2008,9 +2014,61 @@ class FileProcessor:
                     len(str(col))    # Length of column name
                 ) + 2  # Add a little extra space
                 worksheet.set_column(idx, idx, max_len)  # Set column width
+
+            # Add a new sheet for reference data
+            ref_sheet = workbook.add_worksheet('refs')
+
+            # Add headers to the ref sheet
+            ref_sheet.write(0, 0, 'Pole #')
+            ref_sheet.write(0, 1, 'SCID')
+            ref_sheet.write(0, 2, 'Reference SCID')
+
+            row_num = 1
+            # Use the original df for iterating through poles, not df_final_rows
+            for index, record in df.iterrows(): 
+                pole_number = record.get("Pole #", "")
+                scid = record.get("SCID", "")
+                
+                # Check for reference connections
+                node_id_1 = record.get("node_id_1", "")
+                if node_id_1:
+                    for conn_id, conn_data in job_data.get("connections", {}).items():
+                        # Ensure nodes_data is passed correctly to is_reference_connection
+                        if is_reference_connection(conn_data, job_data.get("nodes", {}), node_id_1):
+                            ref_id = conn_data.get("node_id_2") if conn_data.get("node_id_1") == node_id_1 else conn_data.get("node_id_1")
+                            if ref_id:
+                                ref_node_data = job_data.get("nodes", {}).get(ref_id, {})
+                                ref_scid = get_scid_from_node_data(ref_node_data)
+
+                                ref_sheet.write(row_num, 0, pole_number)
+                                ref_sheet.write(row_num, 1, scid)
+                                ref_sheet.write(row_num, 2, ref_scid)
+                                row_num += 1
+                
+                # Check for "002.A" SCID
+                if "002.A" in str(scid):
+                    # Avoid duplicate entries if already added by reference connection logic
+                    # This check is a bit simplistic, might need refinement if pole_number and scid can be non-unique for different reasons
+                    already_added = False
+                    for r in range(1, row_num):
+                        if ref_sheet.cell(r, 0).value == pole_number and ref_sheet.cell(r, 1).value == scid:
+                            already_added = True
+                            break
+                    if not already_added:
+                        ref_sheet.write(row_num, 0, pole_number)
+                        ref_sheet.write(row_num, 1, scid)
+                        ref_sheet.write(row_num, 2, "002.A SCID") # Indicate the reason for adding
+                        row_num += 1
             
+            # Auto-fit columns for the "refs" sheet
+            ref_sheet.set_column(0, 0, max(10, len('Pole #') + 2))
+            ref_sheet.set_column(1, 1, max(15, len('SCID') + 2))
+            ref_sheet.set_column(2, 2, max(20, len('Reference SCID') + 2))
+
             print(f"Excel file created: {path}")
-            print(f"Total rows written to Excel: {len(df_final_rows)}") # Clarified log
+            print(f"Total rows written to Excel (MakeReadyData): {len(df_final_rows)}") # Clarified log
+            print(f"Total rows written to Excel (refs): {row_num -1 }")
+
 
         except Exception as e:
             print(f"Error during Excel file creation or formatting: {str(e)}")

@@ -10,7 +10,7 @@ This project is a web application designed to process uploaded JSON files and ge
    - **Key Class:** `FileProcessor`
      - `__init__(self, output_dir=None)`: Initializes with a specified output directory, centralizing where generated files are stored. Detects Heroku/Render environments to use `/tmp`, otherwise uses a system temporary subdirectory.
      - `process_files(self, job_json_path, geojson_path=None)`: Main entry point for processing. Loads JSON, calls `process_data` to get a DataFrame, then calls `create_output_excel` and `logger.write_summary`. Generates uniquely timestamped output filenames.
-     - `create_output_excel(self, path, df, job_data)`: Takes a Pandas DataFrame and writes it to an Excel file with specific formatting, including merged cells and auto-fitted columns. Uses a `try...finally` block to ensure the `ExcelWriter` is closed. Updated to use new header text for reference spans.
+     - `create_output_excel(self, path, df, job_data)`: Takes a Pandas DataFrame and writes it to an Excel file with specific formatting. Uses a `try...finally` block for robust writer closing. Updated to use new header text for reference spans. **Further updated (2025-05-23) to conditionally populate the "Mid-Span (same span as existing)" column for main pole attachers only if the pole attacher is new or has moved.**
      - `process_data(self, job_data, geojson_data)`: Transforms the input JSON data into a structured Pandas DataFrame suitable for the Excel report. Contains significant domain-specific logic for handling nodes, connections, attachers, heights, bearings, etc.
      - `get_reference_attachers(self, job_data, current_node_id)`: Overhauled to correctly identify true reference spans using `is_reference_connection`. Builds "Ref (...)" blocks with accurate bearing, node type, and filtered/sorted attachers as per new playbook.
      - Helper methods for data extraction (e.g., `get_attachers_for_node`, `get_lowest_heights_for_connection`, `get_neutral_wire_height`) and formatting (e.g., `format_height_feet_inches`).
@@ -94,6 +94,8 @@ This project is a web application designed to process uploaded JSON files and ge
     - Rewrote `FileProcessor.get_reference_attachers` to accurately identify and process true reference spans based on new playbook rules (button type and target SCID format). This includes correct header generation, attacher filtering (communication/guy wires below neutral), data capture (description, existing/proposed heights), and sorting (attachers by height, multiple ref spans by bearing).
     - Updated `FileProcessor.create_output_excel` to use the new "Ref (...)" header format.
     - This change addresses issues like the PL410620 bug where non-reference spans were incorrectly labeled.
+- **Midspan Proposed Height Logic (2025-05-23):**
+    - Modified `FileProcessor.create_output_excel` so that the "Mid-Span (same span as existing)" column for main pole attachers is populated only if the pole attacher has a non-empty `proposed_height` (i.e., it's new or has moved). Otherwise, this midspan column is left blank for that attacher.
 
 ## User Feedback Integration and Its Impact on Development
 - The primary driver for recent changes was user reports of "corrupted Excel files."
@@ -108,3 +110,4 @@ This project is a web application designed to process uploaded JSON files and ge
 - `cline_docs/projectRoadmap.md`: Tracks high-level goals, features, and progress.
 - `cline_docs/currentTask.md`: Details the current development focus and next steps.
 - `cline_docs/techStack.md`: Outlines the technologies and architectural decisions.
+- `userInstructions/local_testing_setup.md`: Provides detailed instructions for setting up and running the application locally for testing.

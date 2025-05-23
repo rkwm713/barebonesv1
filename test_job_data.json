@@ -1,0 +1,1 @@
+{"nodes": {"node1": {"attributes": {"scid": {"auto_button": "100"}}, "photos": {}}, "node2": {"attributes": {"scid": {"auto_button": "101"}}, "photos": {}}}, "connections": {"conn1": {"node_id_1": "node1", "node_id_2": "node2", "attributes": {"connection_type": {"button_added": "aerial cable"}}}}, "traces": {}}

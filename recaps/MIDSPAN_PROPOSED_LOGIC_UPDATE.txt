@@ -1,0 +1,14 @@
+Summary of Changes for Midspan Proposed Height Logic (barebones.py) - 2025-05-23
+
+This update modifies the logic for populating the "Mid-Span (same span as existing)" column in the Excel output.
+
+Key Change in `FileProcessor.create_output_excel`:
+
+1.  **Conditional Midspan Population for Main Attachers:**
+    *   When processing main pole attachers (`Main_Attacher` category):
+        *   The "Mid-Span (same span as existing)" column is now populated **only if** the pole attacher itself has a proposed height (`attacher.get('proposed_height')` is non-empty).
+        *   A non-empty `proposed_height` for a pole attacher indicates that it is either a new attacher or an existing one that has moved.
+        *   If the condition is met (attacher is new or moved), `self.get_midspan_proposed_heights()` is called to calculate and populate the midspan value.
+        *   If the condition is not met (attacher's height at the pole has not changed), the "Mid-Span (same span as existing)" column will be an empty string for that attacher.
+
+This change ensures that proposed midspan heights are only shown when the corresponding pole attachment has also changed, aligning with the user's feedback.

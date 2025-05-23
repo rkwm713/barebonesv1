@@ -15,6 +15,7 @@
   - [x] Implemented more robust correction in `format_height_feet_inches` with explicit integer conversion and inch rollover safeguard.
   - [x] Update `main()` in `barebones.py` for better local testing.
   - [x] Implement accurate reference span identification and "Ref (...)" block generation in `barebones.py` as per playbook.
+  - [x] Conditionally populate "Mid-Span (same span as existing)" column in `create_output_excel` based on whether the main pole attacher is new or has moved.
   - [ ] Further enhance error handling within `create_output_excel` for cell merging and formatting.
 - **File Serving (Flask & FastAPI):**
   - [x] Update Flask app (`app.py`) to correctly initialize `FileProcessor` with output directory.
@@ -26,6 +27,8 @@
 - **Logging & Monitoring:**
   - [x] Clarify log messages in `FileProcessor` regarding DataFrame size vs. Excel row count.
   - [ ] Implement comprehensive logging for file operations (creation, access, deletion).
+- **Developer Experience / Testing:**
+  - [x] Create local testing setup instructions (`userInstructions/local_testing_setup.md`).
   - [ ] Add checksum validation for downloaded files (optional, for client-side verification).
 
 ## Completion Criteria
@@ -56,3 +59,5 @@
 - Added `Content-Length` header to download responses in `app.py`.
 - Added `Content-Length` header to download responses in `backend/app.py`.
 - Implemented new logic in `barebones.py` for identifying and processing reference spans, including new helper functions (`get_scid_from_node_data`, `is_reference_connection`) and an overhaul of `get_reference_attachers`. Updated `create_output_excel` for correct reference span header text.
+- Updated `FileProcessor.create_output_excel` to conditionally populate the "Mid-Span (same span as existing)" column for main pole attachers only if the pole attacher is new or has moved.
+- Created `userInstructions/local_testing_setup.md` with detailed steps for setting up and running the application locally.

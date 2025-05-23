@@ -1,0 +1,20 @@
+Added functionality to `barebones.py` to create a new sheet named "refs" in the output Excel file.
+
+The "refs" sheet includes poles that have:
+1. A reference connection (drawn with the "ref" tool and targeting a node with a "." in its SCID).
+2. An SCID containing "002.A".
+
+The sheet contains the following columns:
+- Pole #
+- SCID
+- Reference SCID (or "002.A SCID" as applicable)
+
+The `create_output_excel` method in the `FileProcessor` class was modified to:
+- Create the "refs" worksheet.
+- Add headers to the "refs" sheet.
+- Iterate through the processed pole data (from the `df` DataFrame).
+- Check each pole for reference connections using the `is_reference_connection` helper function.
+- Check each pole's SCID for the "002.A" substring.
+- Write the relevant pole number, SCID, and reference SCID to the "refs" sheet.
+- Implemented a basic check to avoid duplicate entries for poles that might be added due to both a reference connection and a "002.A" SCID.
+- Added auto-fitting for the columns in the "refs" sheet.
