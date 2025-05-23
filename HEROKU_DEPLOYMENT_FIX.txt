@@ -1,0 +1,50 @@
+HEROKU DEPLOYMENT FIX - Report Generation Issue
+===============================================
+Date: 2025-05-23
+
+PROBLEM IDENTIFIED:
+- Web app was crashing on Heroku with "uvicorn: command not found"
+- App was generating old reports because it wasn't actually running
+- Two separate requirements.txt files:
+  * Root: Flask dependencies (old app)
+  * backend/: FastAPI dependencies (current app)
+- Heroku only installs from root requirements.txt
+
+SOLUTION IMPLEMENTED:
+- Merged both requirements files into root requirements.txt
+- Added all FastAPI/uvicorn dependencies to root file
+- Kept legacy Flask dependencies for compatibility
+
+KEY CHANGES:
+1. Updated root requirements.txt to include:
+   - fastapi==0.115.0
+   - uvicorn[standard]==0.30.1
+   - python-multipart==0.0.9
+   - websockets==13.1
+   - aiofiles==24.1.0
+   - pydantic==2.9.2
+   - openpyxl==3.1.5
+
+2. Organized dependencies by category:
+   - FastAPI dependencies (current web app)
+   - Data processing dependencies
+   - Date utilities
+   - Legacy Flask dependencies
+
+NEXT STEPS:
+1. Commit and push changes to git
+2. Deploy to Heroku
+3. Verify app starts successfully
+4. Test file upload and report generation
+
+EXPECTED RESULT:
+- Heroku app should start without crashing
+- uvicorn command will be found and executed
+- Updated barebones.py code will be used for report generation
+- No more old/cached reports
+
+FILES MODIFIED:
+- requirements.txt (merged dependencies)
+
+FILES CREATED:
+- HEROKU_DEPLOYMENT_FIX.txt (this documentation)
