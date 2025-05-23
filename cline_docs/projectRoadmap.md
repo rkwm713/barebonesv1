@@ -48,6 +48,8 @@
 - Updated `FileProcessor.create_output_excel` to use a `try...finally` block, ensuring `ExcelWriter` is closed.
 - Removed debug `print` statements from `FileProcessor.format_height_feet_inches`.
 - Corrected logic in `FileProcessor.format_height_feet_inches` to prevent "X' 12"" height formatting errors.
-- Updated FastAPI app (`backend/app.py`) `process_file_sync` to correctly instantiate `FileProcessor` and find unique output files.
+- Improved `main` function in `barebones.py` for local testing.
+- Updated Flask app (`app.py`) `process_file` to correctly instantiate `FileProcessor` and find unique output files.
+- Updated FastAPI app (`backend/app.py`) `process_file_sync` to correctly instantiate `FileProcessor` and find unique output files, including adjusting the search prefix for processor-generated files.
 - Added `Content-Length` header to download responses in `app.py`.
 - Added `Content-Length` header to download responses in `backend/app.py`.
