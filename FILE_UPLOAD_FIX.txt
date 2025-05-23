@@ -1,0 +1,34 @@
+# File Upload Fix Summary
+
+## Issue
+The file upload functionality was not working when a user selected a JSON file and clicked "Generate Reports".
+
+## Root Cause
+The HTML file (templates/index.html) contained incomplete inline JavaScript that did not include the upload functionality. Meanwhile, there was a complete implementation in the static/script.js file, but it wasn't being loaded by the HTML file.
+
+## Fix Applied
+1. Removed the incomplete inline JavaScript from the HTML file
+2. Added a script tag to properly load the external JavaScript file:
+   ```html
+   <script src="{{ url_for('static', filename='script.js') }}"></script>
+   ```
+
+## How the Fix Works
+- Now when the page loads, it properly includes the complete JavaScript from static/script.js
+- This includes all the event handlers, particularly the one for the "Generate Reports" button that was missing
+- The upload functionality is now fully operational, allowing users to:
+  - Select a JSON file
+  - Click "Generate Reports"
+  - See the processing status
+  - Download the resulting reports
+
+## Deployment
+For the changes to take effect on your Heroku application, you need to redeploy by pushing the changes to your Heroku Git repository:
+
+```bash
+git add templates/index.html
+git commit -m "Fix file upload functionality by loading external JavaScript"
+git push heroku main
+```
+
+This will trigger a new build and deployment of your application.
