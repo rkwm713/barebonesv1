@@ -2020,7 +2020,11 @@ class FileProcessor:
 
             # Add a new sheet for reference data with detailed attachers
             ref_sheet = workbook.add_worksheet('refs')
-            ref_headers = ["Pole #", "SCID", "Ref. Structure SCID", "Attacher Name", "Existing Mid-Span Height", "Proposed Mid-Span Height"]
+            ref_headers = [
+                "Pole #", "SCID", "Ref. Structure SCID", "Attacher Name", 
+                "Main Pole Existing Height", "Main Pole Proposed Height",
+                "Mid-Span Existing Height", "Mid-Span Proposed Height"
+            ]
             for c_idx, header in enumerate(ref_headers):
                 ref_sheet.write(0, c_idx, header)
             
@@ -2036,8 +2040,12 @@ class FileProcessor:
                     continue
 
                 # `attacher_data` is already fetched earlier in this loop for the MakeReadyData sheet.
-                # It contains `reference_spans` populated by the (now modified) `get_reference_attachers`
-                # attacher_data = self.get_attachers_for_node(job_data, node_id_main) # This is already available
+                main_pole_attachers_lookup = {
+                    att['name']: {
+                        'existing': att['existing_height'],
+                        'proposed': att['proposed_height']
+                    } for att in attacher_data.get('main_attachers', [])
+                }
 
                 pole_has_outgoing_refs = False
                 if attacher_data and 'reference_spans' in attacher_data:
@@ -2045,13 +2053,23 @@ class FileProcessor:
                         pole_has_outgoing_refs = True
                         ref_structure_scid = ref_span_detail.get('ref_scid', 'Unknown Ref SCID')
                         
-                        for attacher in ref_span_detail.get('data', []):
+                        for attacher_on_ref_span in ref_span_detail.get('data', []):
+                            attacher_name = attacher_on_ref_span.get('name', '')
+                            mid_span_existing_h = attacher_on_ref_span.get('existing_height', '')
+                            mid_span_proposed_h = attacher_on_ref_span.get('proposed_height', '')
+
+                            main_pole_heights = main_pole_attachers_lookup.get(attacher_name, {'existing': '', 'proposed': ''})
+                            main_pole_existing_h = main_pole_heights['existing']
+                            main_pole_proposed_h = main_pole_heights['proposed']
+
                             ref_sheet.write(ref_row_num, 0, pole_number_main)
                             ref_sheet.write(ref_row_num, 1, scid_main)
                             ref_sheet.write(ref_row_num, 2, ref_structure_scid)
-                            ref_sheet.write(ref_row_num, 3, attacher.get('name', ''))
-                            ref_sheet.write(ref_row_num, 4, attacher.get('existing_height', ''))
-                            ref_sheet.write(ref_row_num, 5, attacher.get('proposed_height', ''))
+                            ref_sheet.write(ref_row_num, 3, attacher_name)
+                            ref_sheet.write(ref_row_num, 4, main_pole_existing_h)
+                            ref_sheet.write(ref_row_num, 5, main_pole_proposed_h)
+                            ref_sheet.write(ref_row_num, 6, mid_span_existing_h)
+                            ref_sheet.write(ref_row_num, 7, mid_span_proposed_h)
                             ref_row_num += 1
                 
                 # Check for "002.A" SCID for the main pole
@@ -2061,21 +2079,22 @@ class FileProcessor:
                         ref_sheet.write(ref_row_num, 1, scid_main)
                         ref_sheet.write(ref_row_num, 2, "N/A - Pole is 002.A") 
                         ref_sheet.write(ref_row_num, 3, "Pole SCID is 002.A") 
-                        ref_sheet.write(ref_row_num, 4, "") 
-                        ref_sheet.write(ref_row_num, 5, "") 
+                        ref_sheet.write(ref_row_num, 4, "") # Main Pole Existing
+                        ref_sheet.write(ref_row_num, 5, "") # Main Pole Proposed
+                        ref_sheet.write(ref_row_num, 6, "") # Mid-Span Existing
+                        ref_sheet.write(ref_row_num, 7, "") # Mid-Span Proposed
                         ref_row_num += 1
             
             # Auto-fit columns for the "refs" sheet
-            for c_idx, header_name in enumerate(ref_headers):
-                # Simple auto-fit: max length of header or a default width
-                column_width = max(len(header_name) + 2, 15 if c_idx < 2 else 25) # Wider for attacher names/heights
-                if c_idx == 0: column_width = 12 # Pole #
-                if c_idx == 1: column_width = 15 # SCID
-                if c_idx == 2: column_width = 20 # Ref SCID
-                if c_idx == 3: column_width = 30 # Attacher Name
-                if c_idx == 4: column_width = 25 # Existing Mid-Span
-                if c_idx == 5: column_width = 25 # Proposed Mid-Span
-                ref_sheet.set_column(c_idx, c_idx, column_width)
+            ref_sheet.set_column(0, 0, 12)  # Pole #
+            ref_sheet.set_column(1, 1, 15)  # SCID
+            ref_sheet.set_column(2, 2, 20)  # Ref. Structure SCID
+            ref_sheet.set_column(3, 3, 30)  # Attacher Name
+            ref_sheet.set_column(4, 4, 25)  # Main Pole Existing Height
+            ref_sheet.set_column(5, 5, 25)  # Main Pole Proposed Height
+            ref_sheet.set_column(6, 6, 25)  # Mid-Span Existing Height
+            ref_sheet.set_column(7, 7, 25)  # Mid-Span Proposed Height
+
 
             print(f"Excel file created: {path}")
             print(f"Total rows written to Excel (MakeReadyData): {len(df_final_rows)}") 

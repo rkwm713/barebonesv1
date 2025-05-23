@@ -7,21 +7,24 @@ Updated functionality in `barebones.py` for the "refs" sheet in the output Excel
     2. An SCID containing "002.A".
 - Initial columns: "Pole #", "SCID", "Reference SCID".
 
-**Second Update (Refined "refs" sheet):**
+**Second Update (Refined "refs" sheet - Attacher Details):**
 - Modified `FileProcessor.get_reference_attachers` method to include the actual SCID of the reference structure (`ref_scid`) and the reference node type (`ref_node_type`) in its output for each reference span.
 - Modified `FileProcessor.create_output_excel` method to enhance the "refs" sheet:
     - Updated headers to: "Pole #", "SCID" (main pole), "Ref. Structure SCID", "Attacher Name", "Existing Mid-Span Height", "Proposed Mid-Span Height".
     - For each pole that is a source of a reference connection:
         - Iterates through each reference span originating from the main pole.
         - For each attacher on that reference span (these are mid-span measurements):
-            - Writes a new row to the "refs" sheet containing:
-                - Main Pole #: The pole number of the source pole.
-                - SCID: The SCID of the source pole.
-                - Ref. Structure SCID: The actual SCID of the connected reference structure.
-                - Attacher Name: The name of the attacher on the reference span.
-                - Existing Mid-Span Height: The existing height of the attacher at the mid-point of the reference span.
-                - Proposed Mid-Span Height: The proposed height of the attacher at the mid-point of the reference span.
+            - Writes a new row to the "refs" sheet containing the main pole's info, the reference structure's SCID, and the attacher's mid-span details.
     - For poles with an SCID containing "002.A":
         - If the pole was not already listed as a source of any reference spans, a single row is added for it.
-        - This row includes the "Pole #", "SCID", with "Ref. Structure SCID" marked as "N/A - Pole is 002.A" and "Attacher Name" as "Pole SCID is 002.A". Height columns are left blank for these entries.
     - Added auto-fitting for the new column layout in the "refs" sheet.
+
+**Third Update (Refined "refs" sheet - Main Pole Heights for Ref. Attachers):**
+- Further modified `FileProcessor.create_output_excel` for the "refs" sheet:
+    - Updated headers to: "Pole #", "SCID" (main pole), "Ref. Structure SCID", "Attacher Name", "Main Pole Existing Height", "Main Pole Proposed Height", "Mid-Span Existing Height", "Mid-Span Proposed Height".
+    - When processing attachers on a reference span:
+        - In addition to mid-span heights, the code now looks up the corresponding attacher's existing and proposed heights on the main (source) pole.
+        - This is done by creating a lookup map from `attacher_data['main_attachers']` for the current source pole.
+        - The "Main Pole Existing Height" and "Main Pole Proposed Height" columns are populated with these values.
+    - For "002.A" SCID poles (that don't have outgoing references), the main pole height columns will be blank or "N/A".
+    - Adjusted column auto-fitting for the new set of columns.
