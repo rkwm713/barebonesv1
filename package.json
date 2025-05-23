@@ -3,12 +3,14 @@
   "version": "1.0.0",
   "description": "MakeReady Report Generator - FastAPI + React",
   "scripts": {
-    "postinstall": "cd frontend && npm install",
-    "build": "cd frontend && npm run build",
-    "heroku-postbuild": "cd frontend && npm install && npm run build"
+    "postinstall": "echo 'Root postinstall complete'",
+    "build": "cd frontend && npm ci && npm run build",
+    "heroku-postbuild": "echo 'Starting Heroku build process...' && cd frontend && echo 'Installing frontend deps...' && npm ci && echo 'Building frontend...' && npm run build && echo 'Build complete. Verifying...' && ls -la frontend/dist/ && echo 'Frontend ready for deployment'"
   },
   "engines": {
     "node": "18.x",
     "npm": "9.x"
-  }
+  },
+  "devDependencies": {},
+  "dependencies": {}
 }
