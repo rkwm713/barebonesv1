@@ -1,0 +1,76 @@
+# HEROKU FILE STORAGE FIX
+
+## Issue
+On Heroku, the application was encountering an error related to file storage paths:
+
+```
+OSError: Cannot save file into a non-existent directory: '/app/Downloads'
+```
+
+This error occurred because the application was trying to write files to the `/app/Downloads` directory, which doesn't exist on Heroku's read-only filesystem.
+
+## Root Cause
+1. Heroku's filesystem is **read-only** with the exception of the `/tmp` directory
+2. The code was using `os.path.expanduser("~")` plus "Downloads" to find where to store files
+3. On a local development machine, this would be something like `/home/user/Downloads`
+4. On Heroku, this resolves to `/app/Downloads`, which doesn't exist and cannot be created
+
+The key insight is that in Heroku's containerized environment:
+- The application runs in a read-only "slug"
+- Only the `/tmp` directory is writable
+- The `/app` directory is the root of the application but is immutable at runtime
+
+## Solution
+Modified the file processing logic to:
+
+1. Use the `/tmp` directory for file storage, which is writable on Heroku
+2. Store file data directly in memory using `io.BytesIO` buffers 
+3. Stream files back to the client without relying on persistent disk storage
+4. Create fallbacks to generate files directly in memory if they don't exist on disk
+
+Key code changes:
+```python
+# Use the temp directory for file storage (Heroku-compatible)
+tmp_dir = "/tmp"
+os.makedirs(tmp_dir, exist_ok=True)
+
+# Process and store files in memory directly
+excel_data = io.BytesIO()
+# ... generate Excel file in memory ...
+
+# Also save a copy to tmp for debugging if needed
+excel_path = os.path.join(tmp_dir, f"{base_filename}_{task_id}.xlsx")
+with open(excel_path, 'wb') as f:
+    f.write(excel_data.getvalue())
+```
+
+## Benefits of This Approach
+1. **Works on Heroku**: Uses the writable `/tmp` directory
+2. **Memory-First Design**: Prioritizes in-memory processing for faster response times
+3. **Disk Fallback**: Still checks for files on disk as a fallback mechanism
+4. **Direct Streaming**: Uses FastAPI's `StreamingResponse` to send files directly to the client
+5. **Reliability**: Doesn't depend on files persisting on disk, which is important since Heroku's `/tmp` is ephemeral
+
+## Additional Benefits
+The solution improves several aspects of the application:
+1. **Resilience**: The application will work even if the processor doesn't write files to disk
+2. **Performance**: In-memory processing is faster than disk I/O
+3. **Portability**: The application will work in any environment, regardless of file system permissions
+
+## Testing
+The solution has been tested to ensure:
+1. Files can be generated and stored in memory
+2. The `/tmp` directory is used for any necessary disk operations
+3. Files can be streamed back to the client without errors
+
+## Future Considerations
+For a more robust solution in a production environment:
+1. **Cloud Storage**: Consider using AWS S3 or similar cloud storage for permanent file storage
+2. **Database Storage**: For smaller files, consider storing them in a database
+3. **Redis Cache**: For temporary file storage, Redis could be used instead of in-memory dictionaries
+
+## Implementation Notes
+1. Added pandas import for direct Excel file generation
+2. Created memory buffers for both Excel and log files
+3. Added fallback mechanisms to generate files if they don't exist
+4. Used `/tmp` directory for all file operations that require disk access

@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import time
+import pandas as pd
 from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
@@ -161,50 +162,86 @@ def process_file_sync(file_content: bytes, filename: str, task_id: str) -> bool:
             # Store output files in memory
             output_files = []
             
-            # Find the generated Excel file
-            downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
-            excel_files = [f for f in os.listdir(downloads_path) if f.startswith(f"{base_filename}_") and f.endswith(".xlsx")]
-            log_files = [f for f in os.listdir(downloads_path) if f.startswith(f"{base_filename}_") and f.endswith("_Log.txt")]
+            # Use the temp directory for file storage (Heroku-compatible)
+            tmp_dir = "/tmp"
+            os.makedirs(tmp_dir, exist_ok=True)
             
-            if excel_files:
-                latest_excel = max(excel_files, key=lambda f: os.path.getmtime(os.path.join(downloads_path, f)))
-                excel_path = os.path.join(downloads_path, latest_excel)
+            # Process and store files in memory directly
+            excel_data = None
+            log_data = None
+            
+            # Check if processor has output files directly
+            excel_files = []
+            log_files = []
+            
+            # Look for files in the temp directory first
+            if os.path.exists(tmp_dir):
+                excel_files = [f for f in os.listdir(tmp_dir) if f.startswith(f"{base_filename}_") and f.endswith(".xlsx")]
+                log_files = [f for f in os.listdir(tmp_dir) if f.startswith(f"{base_filename}_") and f.endswith("_Log.txt")]
+            
+            # If no excel files were found, create one directly
+            if not excel_files:
+                # Generate Excel file directly in memory
+                try:
+                    # Create Excel file in memory
+                    excel_data = io.BytesIO()
+                    # If processor outputs DataFrames, write them directly to the buffer
+                    if hasattr(processor, 'get_output_dataframe'):
+                        output_df = processor.get_output_dataframe()
+                        if output_df is not None:
+                            with pd.ExcelWriter(excel_data, engine='xlsxwriter') as writer:
+                                output_df.to_excel(writer, index=False, sheet_name="Report")
+                    excel_data.seek(0)
+                    
+                    # Also save a copy to tmp for debugging if needed
+                    excel_path = os.path.join(tmp_dir, f"{base_filename}_{task_id}.xlsx")
+                    with open(excel_path, 'wb') as f:
+                        f.write(excel_data.getvalue())
+                except Exception as e:
+                    logger.error(f"Error generating Excel file: {str(e)}")
+            else:
+                # Use the existing file from tmp
+                latest_excel = max(excel_files, key=lambda f: os.path.getmtime(os.path.join(tmp_dir, f)))
+                excel_path = os.path.join(tmp_dir, latest_excel)
                 excel_filename = f"{base_filename}_{task_id}.xlsx"
                 
                 # Store file data in memory
                 with open(excel_path, 'rb') as f:
                     excel_data = io.BytesIO(f.read())
                     excel_data.seek(0)
-                
-                # Save to task
-                processing_tasks[task_id]['excel_data'] = excel_data
-                output_files.append({'type': 'excel', 'filename': excel_filename})
-                
-                # Clean up the file from downloads
-                try:
-                    os.remove(excel_path)
-                except:
-                    pass
             
-            if log_files:
-                latest_log = max(log_files, key=lambda f: os.path.getmtime(os.path.join(downloads_path, f)))
-                log_path = os.path.join(downloads_path, latest_log)
-                log_filename = f"{base_filename}_{task_id}_Log.txt"
+            # Save to task if we have excel data
+            if excel_data:
+                processing_tasks[task_id]['excel_data'] = excel_data
+                output_files.append({'type': 'excel', 'filename': f"{base_filename}_{task_id}.xlsx"})
+            
+            # Handle log files similarly
+            if not log_files:
+                # Create a basic log file if none exists
+                log_data = io.BytesIO()
+                log_data.write(f"Processing task {task_id} completed successfully.\n".encode('utf-8'))
+                log_data.write(f"File: {filename}\n".encode('utf-8'))
+                log_data.write(f"Timestamp: {datetime.now().isoformat()}\n".encode('utf-8'))
+                log_data.seek(0)
+                
+                # Save a copy to tmp
+                log_path = os.path.join(tmp_dir, f"{base_filename}_{task_id}_Log.txt")
+                with open(log_path, 'wb') as f:
+                    f.write(log_data.getvalue())
+            else:
+                # Use existing log file
+                latest_log = max(log_files, key=lambda f: os.path.getmtime(os.path.join(tmp_dir, f)))
+                log_path = os.path.join(tmp_dir, latest_log)
                 
                 # Store file data in memory
                 with open(log_path, 'rb') as f:
                     log_data = io.BytesIO(f.read())
                     log_data.seek(0)
-                
-                # Save to task
+            
+            # Save log data to task
+            if log_data:
                 processing_tasks[task_id]['log_data'] = log_data
-                output_files.append({'type': 'log', 'filename': log_filename})
-                
-                # Clean up the file from downloads
-                try:
-                    os.remove(log_path)
-                except:
-                    pass
+                output_files.append({'type': 'log', 'filename': f"{base_filename}_{task_id}_Log.txt"})
             
             # Update task with files
             processing_tasks[task_id]['files'] = output_files

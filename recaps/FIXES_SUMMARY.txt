@@ -2,6 +2,22 @@
 
 ## Issues Fixed
 
+### 0. Heroku File Storage Path Issue (Latest Fix)
+
+**Problem:** Heroku deployment was failing with an error:
+```
+OSError: Cannot save file into a non-existent directory: '/app/Downloads'
+```
+
+**Root Cause:** Heroku uses a read-only filesystem where only the `/tmp` directory is writable. The application was trying to write files to `/app/Downloads`, which doesn't exist and cannot be created in Heroku's containerized environment.
+
+**Solution:**
+- Modified the file processing logic to use the `/tmp` directory for file storage
+- Implemented in-memory file generation using `io.BytesIO` buffers
+- Added fallback mechanisms to generate files directly if they don't exist on disk
+- Used FastAPI's `StreamingResponse` to stream files directly to the client
+- See full details in `recaps/HEROKU_FILE_STORAGE_FIX.txt`
+
 ### 0. API Routing Path Issues (Latest Fix)
 
 **Problem:** Heroku logs showed 405 Method Not Allowed errors when trying to upload files:
