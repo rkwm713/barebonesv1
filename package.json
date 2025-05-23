@@ -5,7 +5,7 @@
   "scripts": {
     "postinstall": "echo 'Root postinstall complete'",
     "build": "cd frontend && npm ci && npm run build",
-    "heroku-postbuild": "echo 'Starting Heroku build process...' && cd frontend && echo 'Installing frontend deps...' && npm ci && echo 'Building frontend...' && npm run build && echo 'Build complete. Verifying...' && ls -la dist/ && echo 'Frontend ready for deployment'"
+    "heroku-postbuild": "echo 'Starting Heroku build process...' && NPM_CONFIG_PRODUCTION=false npm --prefix frontend ci && echo 'Building frontend...' && npm --prefix frontend run build && echo 'Build complete. Verifying...' && ls -la frontend/dist/ && echo 'Frontend ready for deployment'"
   },
   "engines": {
     "node": "18.x",
