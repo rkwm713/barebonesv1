@@ -32,7 +32,7 @@ export const uploadFile = async (file: File): Promise<UploadResponse> => {
   const formData = new FormData()
   formData.append('file', file)
   
-  const response = await api.post<UploadResponse>('/api/upload', formData, {
+  const response = await api.post<UploadResponse>('/upload', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
@@ -42,14 +42,14 @@ export const uploadFile = async (file: File): Promise<UploadResponse> => {
 }
 
 export const getTaskStatus = async (taskId: string): Promise<TaskStatus> => {
-  const response = await api.get<TaskStatus>(`/api/tasks/${taskId}/status`)
+  const response = await api.get<TaskStatus>(`/tasks/${taskId}/status`)
   return response.data
 }
 
 export const downloadFile = (taskId: string, fileType: 'excel' | 'log'): string => {
-  return `/api/tasks/${taskId}/download/${fileType}`
+  return `${API_BASE_URL}/tasks/${taskId}/download/${fileType}`
 }
 
 export const cleanupTask = async (taskId: string): Promise<void> => {
-  await api.delete(`/api/tasks/${taskId}`)
+  await api.delete(`/tasks/${taskId}`)
 }
