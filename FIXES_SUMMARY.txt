@@ -1,0 +1,77 @@
+# MakeReady Report Generator Fixes Summary
+
+## Issues Fixed
+
+### 1. File Upload Not Working
+
+**Problem:** When selecting a JSON file and clicking "Generate Reports", nothing happened.
+
+**Root Cause:** The HTML file (templates/index.html) contained incomplete inline JavaScript that didn't include the upload functionality. Meanwhile, there was a complete implementation in static/script.js, but it wasn't being loaded by the HTML.
+
+**Solution:**
+- Removed the incomplete inline JavaScript from the HTML file
+- Added a script tag to properly load the external JavaScript file:
+  ```html
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+  ```
+
+### 2. Status Check Errors After Upload
+
+**Problem:** After uploading a file, the browser console showed 404 errors when checking the processing status:
+```
+/status/e8c675b7-2b75-4ccc-ae15-31a988272bcb:1 Failed to load resource: the server responded with a status of 404 (NOT FOUND)
+Error checking status: Error: Status check failed
+```
+
+**Root Cause:** The `processing_tasks` dictionary is stored in-memory. On Heroku, the application may be restarted or requests might be routed to different dynos, causing the task IDs to be lost.
+
+**Solution:**
+
+1. **Client-side Improvements:**
+   - Added error counting for status check failures
+   - After 3 failed attempts, shows a user-friendly error message instead of silently failing
+   - Error message explains that the server may have restarted and suggests trying again
+
+   ```javascript
+   .catch(error => {
+       console.error('Error checking status:', error);
+       // After several failed attempts, show an error
+       if (!window.statusCheckErrors) {
+           window.statusCheckErrors = 0;
+       }
+       window.statusCheckErrors++;
+       
+       // After 3 failed attempts, show error and stop checking
+       if (window.statusCheckErrors >= 3) {
+           clearInterval(statusCheckInterval);
+           showErrorCard('The server lost track of your upload. This can happen if the server was restarted. Please try uploading again.');
+       }
+   });
+   ```
+
+2. **Server-side Improvements:**
+   - Added additional logging when processing files
+   - Added a safety check to verify the task still exists in the processing_tasks dictionary
+   - Added logging to help diagnose when tasks go missing
+
+## Additional Considerations for Future Development
+
+For a more robust solution in a production environment, consider:
+
+1. **Persistent Storage:** Replace the in-memory task tracking with a database (PostgreSQL on Heroku) or Redis to persist task state across application restarts.
+
+2. **File Storage:** Use AWS S3 or Heroku's add-ons for file storage instead of in-memory storage, which is lost when dynos restart.
+
+3. **Background Worker:** Consider using a proper background job system like Celery with RabbitMQ/Redis to handle processing tasks, which would be more reliable for long-running operations.
+
+## Deployment Instructions
+
+For the changes to take effect on your Heroku application, you need to redeploy by pushing the changes to your Heroku Git repository:
+
+```bash
+git add templates/index.html static/script.js app.py
+git commit -m "Fix file upload functionality and improve error handling"
+git push heroku main
+```
+
+This will trigger a new build and deployment of your application.

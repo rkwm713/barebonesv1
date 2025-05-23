@@ -27,6 +27,8 @@ def allowed_file(filename):
 
 def process_file(file_content, filename, task_id):
     """Process the JSON file using the FileProcessor class in memory"""
+    logger.info(f"Starting processing for task {task_id} with file {filename}")
+    
     # Create a temp dir if it doesn't exist
     os.makedirs('temp', exist_ok=True)
     
@@ -34,6 +36,10 @@ def process_file(file_content, filename, task_id):
     temp_file_path = os.path.join('temp', f"{task_id}_{filename}")
     
     try:
+        if task_id not in processing_tasks:
+            logger.error(f"Task {task_id} not found in processing_tasks dictionary")
+            return
+            
         # Update status to processing
         processing_tasks[task_id]['status'] = 'processing'
         

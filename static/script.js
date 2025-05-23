@@ -167,7 +167,17 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .catch(error => {
                 console.error('Error checking status:', error);
-                // Don't show error, just keep checking
+                // After several failed attempts, show an error
+                if (!window.statusCheckErrors) {
+                    window.statusCheckErrors = 0;
+                }
+                window.statusCheckErrors++;
+                
+                // After 3 failed attempts, show error and stop checking
+                if (window.statusCheckErrors >= 3) {
+                    clearInterval(statusCheckInterval);
+                    showErrorCard('The server lost track of your upload. This can happen if the server was restarted. Please try uploading again.');
+                }
             });
     }
 
