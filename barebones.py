@@ -1038,10 +1038,12 @@ class FileProcessor:
                         
                 if span_attachers:
                     span_attachers.sort(key=lambda x: x['raw_height'], reverse=True)
+                    actual_ref_scid = get_scid_from_node_data(ref_node_data) # Get SCID of the reference structure
                     reference_info_list.append({
                         'numeric_bearing': numeric_bearing,
                         'cardinal_bearing': cardinal_bearing_str,
                         'node_type': node_type_value.title(),
+                        'actual_ref_scid': actual_ref_scid, # Add actual SCID of the ref structure
                         'data': span_attachers
                     })
 
@@ -1049,10 +1051,11 @@ class FileProcessor:
         
         final_output_list = []
         for ref_item in reference_info_list:
-            header_text = f"Ref ({ref_item['cardinal_bearing']}) to {ref_item['node_type']}"
+            # header_text = f"Ref ({ref_item['cardinal_bearing']}) to {ref_item['node_type']}" # Not strictly needed if we use actual_ref_scid
             final_output_list.append({
-                'bearing': ref_item['cardinal_bearing'], 
-                'header_text': header_text, 
+                'bearing': ref_item['cardinal_bearing'],
+                'ref_scid': ref_item['actual_ref_scid'], # Use the actual SCID of the reference structure
+                'ref_node_type': ref_item['node_type'], # Keep node type for context
                 'data': ref_item['data']
             })
             
@@ -2015,59 +2018,68 @@ class FileProcessor:
                 ) + 2  # Add a little extra space
                 worksheet.set_column(idx, idx, max_len)  # Set column width
 
-            # Add a new sheet for reference data
+            # Add a new sheet for reference data with detailed attachers
             ref_sheet = workbook.add_worksheet('refs')
+            ref_headers = ["Pole #", "SCID", "Ref. Structure SCID", "Attacher Name", "Existing Mid-Span Height", "Proposed Mid-Span Height"]
+            for c_idx, header in enumerate(ref_headers):
+                ref_sheet.write(0, c_idx, header)
+            
+            ref_row_num = 1 # Start data from row 2 (index 1)
 
-            # Add headers to the ref sheet
-            ref_sheet.write(0, 0, 'Pole #')
-            ref_sheet.write(0, 1, 'SCID')
-            ref_sheet.write(0, 2, 'Reference SCID')
+            # Iterate through the original DataFrame `df` which contains main pole/connection records
+            for _, record in df.iterrows():
+                pole_number_main = record.get("Pole #", "")
+                scid_main = record.get("SCID", "")
+                node_id_main = record.get("node_id_1", "") # ID of the main pole for this record
 
-            row_num = 1
-            # Use the original df for iterating through poles, not df_final_rows
-            for index, record in df.iterrows(): 
-                pole_number = record.get("Pole #", "")
-                scid = record.get("SCID", "")
+                if not node_id_main:
+                    continue
+
+                # `attacher_data` is already fetched earlier in this loop for the MakeReadyData sheet.
+                # It contains `reference_spans` populated by the (now modified) `get_reference_attachers`
+                # attacher_data = self.get_attachers_for_node(job_data, node_id_main) # This is already available
+
+                pole_has_outgoing_refs = False
+                if attacher_data and 'reference_spans' in attacher_data:
+                    for ref_span_detail in attacher_data['reference_spans']:
+                        pole_has_outgoing_refs = True
+                        ref_structure_scid = ref_span_detail.get('ref_scid', 'Unknown Ref SCID')
+                        
+                        for attacher in ref_span_detail.get('data', []):
+                            ref_sheet.write(ref_row_num, 0, pole_number_main)
+                            ref_sheet.write(ref_row_num, 1, scid_main)
+                            ref_sheet.write(ref_row_num, 2, ref_structure_scid)
+                            ref_sheet.write(ref_row_num, 3, attacher.get('name', ''))
+                            ref_sheet.write(ref_row_num, 4, attacher.get('existing_height', ''))
+                            ref_sheet.write(ref_row_num, 5, attacher.get('proposed_height', ''))
+                            ref_row_num += 1
                 
-                # Check for reference connections
-                node_id_1 = record.get("node_id_1", "")
-                if node_id_1:
-                    for conn_id, conn_data in job_data.get("connections", {}).items():
-                        # Ensure nodes_data is passed correctly to is_reference_connection
-                        if is_reference_connection(conn_data, job_data.get("nodes", {}), node_id_1):
-                            ref_id = conn_data.get("node_id_2") if conn_data.get("node_id_1") == node_id_1 else conn_data.get("node_id_1")
-                            if ref_id:
-                                ref_node_data = job_data.get("nodes", {}).get(ref_id, {})
-                                ref_scid = get_scid_from_node_data(ref_node_data)
-
-                                ref_sheet.write(row_num, 0, pole_number)
-                                ref_sheet.write(row_num, 1, scid)
-                                ref_sheet.write(row_num, 2, ref_scid)
-                                row_num += 1
-                
-                # Check for "002.A" SCID
-                if "002.A" in str(scid):
-                    # Avoid duplicate entries if already added by reference connection logic
-                    # This check is a bit simplistic, might need refinement if pole_number and scid can be non-unique for different reasons
-                    already_added = False
-                    for r in range(1, row_num):
-                        if ref_sheet.cell(r, 0).value == pole_number and ref_sheet.cell(r, 1).value == scid:
-                            already_added = True
-                            break
-                    if not already_added:
-                        ref_sheet.write(row_num, 0, pole_number)
-                        ref_sheet.write(row_num, 1, scid)
-                        ref_sheet.write(row_num, 2, "002.A SCID") # Indicate the reason for adding
-                        row_num += 1
+                # Check for "002.A" SCID for the main pole
+                if "002.A" in str(scid_main):
+                    if not pole_has_outgoing_refs: # Only add if it wasn't already listed as a source of ref spans
+                        ref_sheet.write(ref_row_num, 0, pole_number_main)
+                        ref_sheet.write(ref_row_num, 1, scid_main)
+                        ref_sheet.write(ref_row_num, 2, "N/A - Pole is 002.A") 
+                        ref_sheet.write(ref_row_num, 3, "Pole SCID is 002.A") 
+                        ref_sheet.write(ref_row_num, 4, "") 
+                        ref_sheet.write(ref_row_num, 5, "") 
+                        ref_row_num += 1
             
             # Auto-fit columns for the "refs" sheet
-            ref_sheet.set_column(0, 0, max(10, len('Pole #') + 2))
-            ref_sheet.set_column(1, 1, max(15, len('SCID') + 2))
-            ref_sheet.set_column(2, 2, max(20, len('Reference SCID') + 2))
+            for c_idx, header_name in enumerate(ref_headers):
+                # Simple auto-fit: max length of header or a default width
+                column_width = max(len(header_name) + 2, 15 if c_idx < 2 else 25) # Wider for attacher names/heights
+                if c_idx == 0: column_width = 12 # Pole #
+                if c_idx == 1: column_width = 15 # SCID
+                if c_idx == 2: column_width = 20 # Ref SCID
+                if c_idx == 3: column_width = 30 # Attacher Name
+                if c_idx == 4: column_width = 25 # Existing Mid-Span
+                if c_idx == 5: column_width = 25 # Proposed Mid-Span
+                ref_sheet.set_column(c_idx, c_idx, column_width)
 
             print(f"Excel file created: {path}")
-            print(f"Total rows written to Excel (MakeReadyData): {len(df_final_rows)}") # Clarified log
-            print(f"Total rows written to Excel (refs): {row_num -1 }")
+            print(f"Total rows written to Excel (MakeReadyData): {len(df_final_rows)}") 
+            print(f"Total data rows written to Excel (refs): {ref_row_num -1 }")
 
 
         except Exception as e:

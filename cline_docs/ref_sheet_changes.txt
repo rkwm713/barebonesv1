@@ -1,20 +1,27 @@
-Added functionality to `barebones.py` to create a new sheet named "refs" in the output Excel file.
+Updated functionality in `barebones.py` for the "refs" sheet in the output Excel file.
 
-The "refs" sheet includes poles that have:
-1. A reference connection (drawn with the "ref" tool and targeting a node with a "." in its SCID).
-2. An SCID containing "002.A".
+**Initial Changes:**
+- Created a new sheet named "refs".
+- Included poles that have:
+    1. A reference connection.
+    2. An SCID containing "002.A".
+- Initial columns: "Pole #", "SCID", "Reference SCID".
 
-The sheet contains the following columns:
-- Pole #
-- SCID
-- Reference SCID (or "002.A SCID" as applicable)
-
-The `create_output_excel` method in the `FileProcessor` class was modified to:
-- Create the "refs" worksheet.
-- Add headers to the "refs" sheet.
-- Iterate through the processed pole data (from the `df` DataFrame).
-- Check each pole for reference connections using the `is_reference_connection` helper function.
-- Check each pole's SCID for the "002.A" substring.
-- Write the relevant pole number, SCID, and reference SCID to the "refs" sheet.
-- Implemented a basic check to avoid duplicate entries for poles that might be added due to both a reference connection and a "002.A" SCID.
-- Added auto-fitting for the columns in the "refs" sheet.
+**Second Update (Refined "refs" sheet):**
+- Modified `FileProcessor.get_reference_attachers` method to include the actual SCID of the reference structure (`ref_scid`) and the reference node type (`ref_node_type`) in its output for each reference span.
+- Modified `FileProcessor.create_output_excel` method to enhance the "refs" sheet:
+    - Updated headers to: "Pole #", "SCID" (main pole), "Ref. Structure SCID", "Attacher Name", "Existing Mid-Span Height", "Proposed Mid-Span Height".
+    - For each pole that is a source of a reference connection:
+        - Iterates through each reference span originating from the main pole.
+        - For each attacher on that reference span (these are mid-span measurements):
+            - Writes a new row to the "refs" sheet containing:
+                - Main Pole #: The pole number of the source pole.
+                - SCID: The SCID of the source pole.
+                - Ref. Structure SCID: The actual SCID of the connected reference structure.
+                - Attacher Name: The name of the attacher on the reference span.
+                - Existing Mid-Span Height: The existing height of the attacher at the mid-point of the reference span.
+                - Proposed Mid-Span Height: The proposed height of the attacher at the mid-point of the reference span.
+    - For poles with an SCID containing "002.A":
+        - If the pole was not already listed as a source of any reference spans, a single row is added for it.
+        - This row includes the "Pole #", "SCID", with "Ref. Structure SCID" marked as "N/A - Pole is 002.A" and "Attacher Name" as "Pole SCID is 002.A". Height columns are left blank for these entries.
+    - Added auto-fitting for the new column layout in the "refs" sheet.
