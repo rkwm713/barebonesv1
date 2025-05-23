@@ -1,0 +1,31 @@
+# Reference Direction Update
+
+## Summary
+Implemented proper cardinal direction calculation for reference connections in column 9 of the output Excel file. Previously, references were showing as "Ref()" without a direction. Now they will display as "Ref(NW)" with the correct cardinal direction based on the bearing between the pole and reference node.
+
+## Changes Made
+1. Added improved bearing calculation functions:
+   - `bearing_degrees`: Calculates the true bearing (0-360°) between two coordinate points
+   - `to_cardinal`: Converts a bearing to a cardinal direction (16-point compass rose by default)
+   - `cardinal_between_nodes`: Helper function that calculates the cardinal direction between a pole and reference node
+
+2. Updated reference connection identification:
+   - Now properly identifies reference connections by checking both `button = "ref"` and `attributes.connection_type = "reference"`
+
+3. Fixed coordinate retrieval:
+   - Now gets pole coordinates directly from the pole node (with fallback to first section point)
+   - Gets reference node coordinates from the reference node itself
+
+4. Improved label formatting:
+   - Now displays "Ref (NW) to Reference" with the correct cardinal direction 
+   - Includes the reference node type in the label (e.g., "Anchor", "Reference")
+
+## Benefits
+- Provides clearer spatial context in the Excel output by showing the cardinal direction of reference nodes
+- Properly follows the connection information from the Katapult JSON data structure
+- Uses a standard 16-point compass rose for more precise direction information
+
+## Technical Details
+The implementation uses the Haversine formula to calculate the true bearing between two coordinate points, then maps the bearing to cardinal directions using a 16-point compass rose (N, NNE, NE, ENE, etc.).
+
+If the pole lacks coordinates, it falls back to using the first section point of the connection. If no valid coordinates can be found, it displays "??" as the direction.

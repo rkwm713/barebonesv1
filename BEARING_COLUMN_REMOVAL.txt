@@ -1,0 +1,17 @@
+# Bearing Column Removal Changes
+
+## Overview
+I've modified the code to remove the bearing column from the Excel output while keeping it in the DataFrame for internal processing. This change won't affect the functionality of your code.
+
+## Changes Made
+1. Updated the comment in `create_output_excel` function to indicate that "Connection ID, SCID, and Bearing are excluded from Excel output"
+2. Removed "Bearing" from the `desired_columns` list which determines what columns are included in the final Excel file
+
+## Impact
+- The bearing information is still preserved in the DataFrame and used for internal processing
+- Bearing direction is still visible in your Excel through the descriptive labels for reference spans and backspans (e.g., "REF (N)" or "Backspan (SE)") in the "Attacher Description" column
+- Bearing information is still used in remedy descriptions for underground connections
+- All functionality remains intact as the bearing data is still being calculated and stored internally
+
+## Result
+The Excel output will no longer include the bearing column, while preserving all the necessary functionality of your code.
