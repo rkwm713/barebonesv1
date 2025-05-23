@@ -14,6 +14,7 @@
   - [x] Correct logic in `format_height_feet_inches` to prevent "X' 12"" results (initial attempt).
   - [x] Implemented more robust correction in `format_height_feet_inches` with explicit integer conversion and inch rollover safeguard.
   - [x] Update `main()` in `barebones.py` for better local testing.
+  - [x] Implement accurate reference span identification and "Ref (...)" block generation in `barebones.py` as per playbook.
   - [ ] Further enhance error handling within `create_output_excel` for cell merging and formatting.
 - **File Serving (Flask & FastAPI):**
   - [x] Update Flask app (`app.py`) to correctly initialize `FileProcessor` with output directory.
@@ -54,3 +55,4 @@
 - Updated FastAPI app (`backend/app.py`) `process_file_sync` to correctly instantiate `FileProcessor` and find unique output files, including adjusting the search prefix for processor-generated files.
 - Added `Content-Length` header to download responses in `app.py`.
 - Added `Content-Length` header to download responses in `backend/app.py`.
+- Implemented new logic in `barebones.py` for identifying and processing reference spans, including new helper functions (`get_scid_from_node_data`, `is_reference_connection`) and an overhaul of `get_reference_attachers`. Updated `create_output_excel` for correct reference span header text.

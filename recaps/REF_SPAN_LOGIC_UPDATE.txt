@@ -1,0 +1,38 @@
+Summary of Changes for Reference Span Logic (barebones.py) - 2025-05-23
+
+This update implements the playbook for correctly identifying, building, and printing "Ref (...)" blocks for service-drop / reference spans.
+
+Key Changes:
+
+1.  **New Helper Functions Added:**
+    *   `get_scid_from_node_data(node_data)`: Extracts SCID from node data, prioritizing 'auto_button', then '-Imported', then the first available value. Handles "Unknown" SCID if data is missing.
+    *   `is_reference_connection(conn, nodes_data, this_node_id)`: Implements the two-step check for true reference spans:
+        1.  Connection `button` must be "ref".
+        2.  Target node's SCID must contain a "." (e.g., "005.B").
+
+2.  **`get_reference_attachers` Method Overhaul:**
+    *   **Identification:** Now uses `is_reference_connection` to filter connections.
+    *   **Bearing Calculation:**
+        *   Calculates numeric bearing (0-360 degrees) for sorting.
+        *   Calculates cardinal bearing (e.g., "N", "NE") for display.
+        *   Handles cases where coordinates might be missing by falling back to the first section's coordinates or defaulting to "??" if still unavailable. Includes try-except for robustness.
+    *   **Node Type:** Extracts the target node's type (e.g., "Reference", "Pedestal"), defaulting to "Reference".
+    *   **Header Text:** Generates header text in the format "Ref ({cardinal\_bearing}) to {Node Type}" (e.g., "Ref (E) to Reference").
+    *   **Attacher Filtering:**
+        *   Processes items from the `photofirst_data` of the mid-point section of the reference connection.
+        *   Includes only "wire" (communication, i.e., non-"cps energy" company) and "guying" categories.
+        *   Filters attachers to keep only those at or below the neutral wire height (if neutral is found).
+    *   **Attacher Data Capture:**
+        *   `description`: "{Company} {Cable Type}". For guys, adds " (Guy)" if not already present.
+        *   `existing_height`: Formatted height.
+        *   `proposed_height`: Calculated based on `mr_move` and `_effective_moves`, formatted. If the attacher itself is marked as "proposed", the existing height becomes the proposed height, and existing is blanked.
+        *   `raw_height`: Numeric height for sorting.
+    *   **Sorting:**
+        *   Attachers within each reference span are sorted by `raw_height` (descending).
+        *   Multiple reference spans for a single pole are sorted by their `numeric_bearing` (clockwise from North).
+    *   **Logging:** Uses `self.logger` to log processed and skipped items during reference span processing.
+
+3.  **`create_output_excel` Method Update:**
+    *   Modified to use the new `header_text` (e.g., "Ref (E) to Reference") from the `get_reference_attachers` output when creating the "Ref\_Span\_Header" row in the Excel sheet.
+
+This addresses the issue of misidentified reference spans (like the PL410620 bug) by ensuring only true service-drop style references are processed and displayed.

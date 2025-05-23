@@ -20,6 +20,52 @@ SPAN_PROPOSED_HEIGHT = "Mid-Span Proposed"
 EXCEL_DATA_START_ROW = 4  # Data will start on row 5 (can be easily changed here)
 
 
+# Helper function to get SCID from node data
+def get_scid_from_node_data(node_data):
+    if not node_data: return "Unknown"
+    # Access attributes, then scid, then try to get a value.
+    attributes = node_data.get("attributes", {})
+    if not attributes: return "Unknown"
+    scid_data = attributes.get("scid", {})
+    if not scid_data: return "Unknown"
+    
+    # Prioritize specific keys if they exist, e.g. 'auto_button', '-Imported'
+    # Based on usage in process_data:
+    scid_value = None
+    for key in ['auto_button', '-Imported']: # Common keys observed
+        if key in scid_data:
+            scid_value = scid_data[key]
+            break
+    if scid_value is None: # Fallback to the first value if specific keys aren't found
+        scid_value = next(iter(scid_data.values()), "Unknown")
+        
+    return str(scid_value) if scid_value is not None and str(scid_value).strip() else "Unknown"
+
+# Helper function to check for valid reference connection based on playbook rules
+def is_reference_connection(conn, nodes_data, this_node_id):
+    # 1) Must have been drawn with the Ref tool
+    if conn.get("button") != "ref":
+        return False
+
+    # 2) Target node must look like a reference (SCID contains ".")
+    # Determine the ID of the other node in the connection
+    other_node_id = None
+    if conn.get("node_id_1") == this_node_id:
+        other_node_id = conn.get("node_id_2")
+    elif conn.get("node_id_2") == this_node_id:
+        other_node_id = conn.get("node_id_1")
+    
+    if not other_node_id:
+        return False # Connection doesn't involve this_node_id or is malformed
+
+    other_node_data = nodes_data.get(other_node_id)
+    if not other_node_data:
+        return False # Target node not found in job_data
+
+    other_scid = get_scid_from_node_data(other_node_data)
+    return "." in other_scid
+
+
 class ProcessingLogger:
     """Logger to track processing details and skipped items"""
     def __init__(self):
@@ -852,207 +898,165 @@ class FileProcessor:
         return backspan_data, bearing
 
     def get_reference_attachers(self, job_data, current_node_id):
-        """Find reference span attachers by finding connections where current_node_id matches either node_id_1 or node_id_2"""
-        reference_info = []  # List to store reference data with bearings
+        """Find reference span attachers based on playbook rules."""
+        reference_info_list = []  # List to store reference data with bearings for sorting
         
-        # Get neutral wire height
-        neutral_height = self.get_neutral_wire_height(job_data, current_node_id)
-        
-        # Find reference connections where our current_node_id matches either node
+        nodes_data = job_data.get("nodes", {})
+        neutral_height = self.get_neutral_wire_height(job_data, current_node_id) # Used for filtering
+
         for conn_id, conn_data in job_data.get("connections", {}).items():
-            # Check if it's a reference connection (button = "ref" and connection_type = "reference")
-            is_reference = False
-            
-            # Check button
-            if conn_data.get("button") == "ref":
-                # Check connection_type
-                connection_type = conn_data.get("attributes", {}).get("connection_type", {})
-                if isinstance(connection_type, dict):
-                    connection_type_value = next(iter(connection_type.values()), "")
-                else:
-                    connection_type_value = connection_type.get("button_added", "")
+            # Use the new helper function to check if this is a valid reference connection
+            if is_reference_connection(conn_data, nodes_data, current_node_id):
                 
-                if "reference" in str(connection_type_value).lower():
-                    is_reference = True
-            
-            if is_reference:
-                # Get the node IDs, making sure the pole is node_id_1 and the reference is node_id_2
-                if conn_data.get("node_id_1") == current_node_id:
-                    pole_id = current_node_id
-                    ref_id = conn_data.get("node_id_2")
-                else:
-                    pole_id = current_node_id
-                    ref_id = conn_data.get("node_id_1")
+                pole_id = current_node_id
+                ref_id = conn_data.get("node_id_2") if conn_data.get("node_id_1") == current_node_id else conn_data.get("node_id_1")
+
+                if not ref_id: continue
+
+                pole_node_data = nodes_data.get(pole_id, {})
+                ref_node_data = nodes_data.get(ref_id, {})
+
+                lat1, lon1 = pole_node_data.get("latitude"), pole_node_data.get("longitude")
+                if None in (lat1, lon1) and conn_data.get("sections"): # Check if sections exist
+                    first_section_data = next(iter(conn_data.get("sections", {}).values()), {})
+                    lat1, lon1 = first_section_data.get("latitude"), first_section_data.get("longitude")
+
+                lat2, lon2 = ref_node_data.get("latitude"), ref_node_data.get("longitude")
+
+                numeric_bearing = -1 
+                cardinal_bearing_str = "??"
+                if None not in (lat1, lon1, lat2, lon2):
+                    try: # Add try-except for robustness in bearing calculation
+                        numeric_bearing = self.bearing_degrees(lat1, lon1, lat2, lon2)
+                        cardinal_bearing_str = self.to_cardinal(numeric_bearing)
+                    except Exception as e:
+                        self.logger.log_item_skipped("RefSpanBearing", f"Conn {conn_id}", f"Bearing calc error: {e}")
                 
-                # Calculate cardinal direction from pole to reference
-                cardinal = self.cardinal_between_nodes(job_data, pole_id, ref_id, conn_data)
-                
-                # Get reference node type
-                ref_node = job_data["nodes"].get(ref_id, {})
-                ref_attributes = ref_node.get("attributes", {})
+                ref_attributes = ref_node_data.get("attributes", {})
                 node_type_data = ref_attributes.get("node_type", {})
                 
+                node_type_value = "Reference" 
                 if isinstance(node_type_data, dict):
-                    node_type = next(iter(node_type_data.values()), "Reference")
-                else:
-                    node_type = str(node_type_data) if node_type_data else "Reference"
+                    node_type_value = next(iter(node_type_data.values()), "Reference")
+                elif isinstance(node_type_data, str) and node_type_data.strip(): # Check for non-empty string
+                    node_type_value = node_type_data
                 
-                # Format the bearing text and label
-                bearing = f"{cardinal}"
-                label = f"Ref ({cardinal}) to {node_type.title()}"
-                
-                # Find the sections to get the attacher data
+                span_attachers = []
                 sections = conn_data.get("sections", {})
                 if sections:
-                    # Find the midpoint section (if multiple sections exist)
                     section_ids = list(sections.keys())
                     mid_section_index = len(section_ids) // 2
                     mid_section_id = section_ids[mid_section_index]
-                    mid_section = sections[mid_section_id]
+                    mid_section_data = sections.get(mid_section_id, {})
                     
-                    # Get the main photo from the midpoint section
-                    photos = mid_section.get("photos", {})
+                    photos = mid_section_data.get("photos", {})
                     main_photo_id = next((pid for pid, pdata in photos.items() if pdata.get("association") == "main"), None)
+
                     if main_photo_id:
-                        # Get photofirst_data from the main photo
-                        photo_data = job_data.get("photos", {}).get(main_photo_id, {})
-                        if not photo_data:
-                            continue
-                        
+                        photo_data_map = job_data.get("photos", {}) # Get the global photos map
+                        photo_data = photo_data_map.get(main_photo_id, {})
                         photofirst_data = photo_data.get("photofirst_data", {})
-                        if not photofirst_data:
-                            continue
-                        
-                        # Process the reference span data
-                        span_data = []
-                        
-                        # Get trace_data
-                        trace_data = job_data.get("traces", {}).get("trace_data", {})
-                        
-                        # Process wire data
-                        wire_data = photofirst_data.get("wire", {})
-                        if wire_data:
-                            for wire in wire_data.values():
-                                trace_id = wire.get("_trace")
-                                if not trace_id or trace_id not in trace_data:
+                        trace_data_global = job_data.get("traces", {}).get("trace_data", {})
+
+                        if photofirst_data and trace_data_global:
+                            for category_pf, items_pf in photofirst_data.items():
+                                if category_pf not in ["wire", "guying"]:
                                     continue
-                                
-                                trace_info = trace_data[trace_id]
-                                company = trace_info.get("company", "").strip()
-                                cable_type = trace_info.get("cable_type", "").strip()
-                                
-                                # Skip if cable_type is "Primary"
-                                if cable_type.lower() == "primary":
-                                    continue
-                                
-                                measured_height = wire.get("_measured_height")
-                                mr_move = wire.get("mr_move", 0)
-                                effective_moves = wire.get("_effective_moves", {})
-                                
-                                if company and cable_type and measured_height is not None:
-                                    try:
-                                        measured_height = float(measured_height)
-                                        attacher_name = f"{company} {cable_type}"
-                                        
-                                        # Format existing height (measured_height)
-                                        feet = int(measured_height) // 12
-                                        inches = round(measured_height - (feet * 12))
-                                        existing_height = f"{feet}'-{inches}\""
-                                        
-                                        # Calculate proposed height using effective_moves and mr_move
-                                        proposed_height = ""
-                                        total_move = float(mr_move)  # Start with mr_move
-                                        
-                                        # Add effective moves
-                                        if effective_moves:
-                                            for move in effective_moves.values():
-                                                try:
-                                                    total_move += float(move)
-                                                except (ValueError, TypeError):
-                                                    continue
-                                        
-                                        # Calculate proposed height if there's a move
-                                        if abs(total_move) > 0:
-                                            proposed_height_value = measured_height + total_move
-                                            feet_proposed = int(proposed_height_value) // 12
-                                            inches_proposed = round(proposed_height_value - (feet_proposed * 12))
-                                            proposed_height = f"{feet_proposed}'-{inches_proposed}\""
-                                        
-                                        span_data.append({
-                                            'name': attacher_name,
-                                            'existing_height': existing_height,
-                                            'proposed_height': proposed_height,
-                                            'raw_height': measured_height,
-                                            'is_reference': True  # Mark this as a reference span
-                                        })
-                                    except (ValueError, TypeError):
+                                if not isinstance(items_pf, dict): continue
+
+                                for item_key, item_value in items_pf.items():
+                                    if not isinstance(item_value, dict): continue
+                                    
+                                    trace_id = item_value.get("_trace")
+                                    if not trace_id or trace_id not in trace_data_global:
                                         continue
-                        
-                        # Process guying data
-                        guying_data = photofirst_data.get("guying", {})
-                        if guying_data:
-                            for guy in guying_data.values():
-                                trace_id = guy.get("_trace")
-                                if not trace_id or trace_id not in trace_data:
-                                    continue
-                                
-                                trace_info = trace_data[trace_id]
-                                company = trace_info.get("company", "").strip()
-                                cable_type = trace_info.get("cable_type", "").strip()
-                                
-                                measured_height = guy.get("_measured_height")
-                                mr_move = guy.get("mr_move", 0)
-                                effective_moves = guy.get("_effective_moves", {})
-                                
-                                if company and cable_type and measured_height is not None and neutral_height is not None:
-                                    try:
-                                        guy_height = float(measured_height)
-                                        if guy_height < neutral_height:
-                                            attacher_name = f"{company} {cable_type} (Down Guy)"
-                                            
-                                            # Format existing height
-                                            feet = int(guy_height) // 12
-                                            inches = round(guy_height - (feet * 12))
-                                            existing_height = f"{feet}'-{inches}\""
-                                            
-                                            # Calculate proposed height using effective_moves and mr_move
-                                            proposed_height = ""
-                                            total_move = float(mr_move)  # Start with mr_move
-                                            
-                                            # Add effective moves
-                                            if effective_moves:
-                                                for move in effective_moves.values():
-                                                    try:
-                                                        total_move += float(move)
-                                                    except (ValueError, TypeError):
-                                                        continue
-                                            
-                                            # Calculate proposed height if there's a move
-                                            if abs(total_move) > 0:
-                                                proposed_height_value = guy_height + total_move
-                                                feet_proposed = int(proposed_height_value) // 12
-                                                inches_proposed = round(proposed_height_value - (feet_proposed * 12))
-                                                proposed_height = f"{feet_proposed}'-{inches_proposed}\""
-                                            
-                                            span_data.append({
-                                                'name': attacher_name,
-                                                'existing_height': existing_height,
-                                                'proposed_height': proposed_height,
-                                                'raw_height': guy_height,
-                                                'is_reference': True
-                                            })
-                                    except (ValueError, TypeError):
+                                    
+                                    trace_info = trace_data_global[trace_id]
+                                    company = trace_info.get("company", "").strip().lower()
+                                    item_type_str = trace_info.get("cable_type", "").strip()
+                                    if not item_type_str: continue
+
+                                    is_communication = company != "cps energy" and category_pf == "wire"
+                                    is_guy_wire = category_pf == "guying"
+
+                                    if not (is_communication or is_guy_wire):
                                         continue
+
+                                    measured_height_str = item_value.get("_measured_height")
+                                    if measured_height_str is None: continue
+                                    
+                                    try:
+                                        measured_height_val = float(measured_height_str)
+                                    except (ValueError, TypeError):
+                                        self.logger.log_item_skipped(f"RefSpan-{category_pf}", f"{company} {item_type_str}", f"Invalid height {measured_height_str}")
+                                        continue
+
+                                    if neutral_height is not None and measured_height_val > neutral_height:
+                                        self.logger.log_item_skipped(
+                                            f"RefSpan-{category_pf}", 
+                                            f"{trace_info.get('company', '').strip()} {item_type_str}", 
+                                            f"Above neutral ({self.format_height_feet_inches(neutral_height)})"
+                                        )
+                                        continue
+                                    
+                                    description = f"{trace_info.get('company', '').strip()} {item_type_str}"
+                                    if is_guy_wire and "(guy)" not in item_type_str.lower():
+                                        description += " (Guy)"
+                                    
+                                    existing_height_fmt = self.format_height_feet_inches(measured_height_val)
+                                    
+                                    mr_move_str = item_value.get("mr_move", "0")
+                                    effective_moves = item_value.get("_effective_moves", {})
+                                    total_move_inches = 0.0
+                                    try:
+                                        total_move_inches = float(mr_move_str if mr_move_str is not None else 0.0)
+                                    except (ValueError, TypeError): pass
+                                    
+                                    if isinstance(effective_moves, dict):
+                                        for move_val_str in effective_moves.values():
+                                            try:
+                                                total_move_inches += float(move_val_str if move_val_str is not None else 0.0)
+                                            except (ValueError, TypeError): continue
+                                    
+                                    proposed_height_fmt = ""
+                                    is_proposed_attacher = trace_info.get("proposed", False)
+
+                                    if is_proposed_attacher:
+                                        proposed_height_fmt = existing_height_fmt 
+                                        existing_height_fmt = ""
+                                    elif abs(total_move_inches) > 0.01:
+                                        proposed_height_val = measured_height_val + total_move_inches
+                                        proposed_height_fmt = self.format_height_feet_inches(proposed_height_val)
+                                    
+                                    span_attachers.append({
+                                        'name': description,
+                                        'existing_height': existing_height_fmt,
+                                        'proposed_height': proposed_height_fmt,
+                                        'raw_height': measured_height_val,
+                                    })
+                                    self.logger.log_item_processed(f"RefSpan-{category_pf}", f"{description} at {existing_height_fmt}")
                         
-                        if span_data:  # Only add reference info if we found attachers
-                            # Sort by height from highest to lowest
-                            span_data.sort(key=lambda x: x['raw_height'], reverse=True)
-                            reference_info.append({
-                                'bearing': bearing,
-                                'data': span_data
-                            })
+                if span_attachers:
+                    span_attachers.sort(key=lambda x: x['raw_height'], reverse=True)
+                    reference_info_list.append({
+                        'numeric_bearing': numeric_bearing,
+                        'cardinal_bearing': cardinal_bearing_str,
+                        'node_type': node_type_value.title(),
+                        'data': span_attachers
+                    })
+
+        reference_info_list.sort(key=lambda x: x['numeric_bearing'])
         
-        return reference_info
+        final_output_list = []
+        for ref_item in reference_info_list:
+            header_text = f"Ref ({ref_item['cardinal_bearing']}) to {ref_item['node_type']}"
+            final_output_list.append({
+                'bearing': ref_item['cardinal_bearing'], 
+                'header_text': header_text, 
+                'data': ref_item['data']
+            })
+            
+        return final_output_list
 
     def get_work_type(self, job_data, node_id):
         """Get the work type from node attributes, falling back to kat_work_type if needed"""
@@ -1850,8 +1854,8 @@ class FileProcessor:
                         # Reference span header row
                         ref_header_row = base_row_data.copy()
                         ref_header_row["Data Category"] = "Ref_Span_Header"
-                        ref_header_row["Bearing"] = ref_span.get('bearing', '')
-                        ref_header_row["Attacher Description"] = f"REF ({ref_span.get('bearing', '')})"
+                        ref_header_row["Bearing"] = ref_span.get('bearing', '') # Keep bearing for potential other uses
+                        ref_header_row["Attacher Description"] = ref_span.get('header_text', f"REF ({ref_span.get('bearing', '')})") # Use new header_text
                         ref_header_row["Attachment Height - Existing"] = ""
                         ref_header_row["Attachment Height - Proposed"] = ""
                         ref_header_row["Mid-Span (same span as existing)"] = ""
