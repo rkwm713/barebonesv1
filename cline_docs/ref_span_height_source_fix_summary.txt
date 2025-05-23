@@ -1,21 +1,19 @@
-Summary of Reference Span Height Source Fix in barebones.py
+## Reference Span Height Source Fix Summary
 
-This document summarizes the fix implemented in the `get_reference_attachers` function within `barebones.py` to ensure that the heights reported for reference span attachers in the "refs" sheet are sourced from the main construction pole's data, not the reference span's midpoint photo data.
+**Date:** 2025-05-23
 
-1.  **Problem:**
-    *   Previously, when identifying attachers on a reference span (e.g., Pole 003 → 003A), the code would find attachers in the reference span's midpoint photo and use the measured heights from that photo.
-    *   This was incorrect because the "refs" sheet is intended to show the heights of those same attachers *on the main construction pole* (Pole 003 in the example) for comparison purposes. Using heights from the reference pole (003A) was misleading.
+**Issue:**
+The previous implementation of the reference height fix had several issues:
+1.  Missing variable definition (`main_pole_attachers_lookup`) in `get_reference_attachers`.
+2.  Missing `get_main_pole_attacher_heights()` helper method.
+3.  Inconsistent logic placement for creating the lookup dictionary.
 
-2.  **Solution:**
-    *   Modified the `get_reference_attachers` function.
-    *   At the beginning of the function, it now retrieves the attacher data (including existing and proposed heights) for the `current_node_id` (the main construction pole) using `self.get_attachers_for_node()`.
-    *   A lookup dictionary (`main_pole_attachers_lookup`) is created from this main pole data.
-    *   Within the loop that processes attachers found in the reference span's midpoint photo, instead of using the heights measured at the midpoint, the code now looks up the attacher name in the `main_pole_attachers_lookup` dictionary.
-    *   The existing and proposed heights from the main pole's data are then used when creating the dictionary for `span_attachers`.
+**Fixes Implemented in `barebones.py`:**
+1.  **Added `get_main_pole_attacher_heights(self, job_data, node_id)` helper method:** This new method is responsible for generating a dictionary lookup of attacher heights (existing and proposed) specifically from the *main pole's* data.
+2.  **Modified `get_reference_attachers(self, job_data, current_node_id)`:**
+    *   Added a call to `self.get_main_pole_attacher_heights(job_data, current_node_id)` at the beginning of the method to create the `main_pole_attachers_lookup` dictionary within the correct scope.
+    *   Ensured that when processing attachers found on the reference span's midpoint photo, the actual existing and proposed heights written to the `span_attachers` list are retrieved from the `main_pole_attachers_lookup` using the attacher's description as the key. This correctly sources the heights from the main pole where the work is happening, rather than the reference span's midpoint.
+3.  **Removed duplicate logic:** The incorrect logic that attempted to create the lookup within the `create_output_excel` method (specifically within the 'refs' sheet generation loop) was removed. The `create_output_excel` method now calls `get_main_pole_attacher_heights` directly when populating columns N and O of the 'refs' sheet, ensuring the correct data source is used there as well.
 
-3.  **Benefits:**
-    *   The heights reported for reference span attachers in the "refs" sheet now accurately reflect the heights of those attachers on the main construction pole.
-    *   This provides correct and meaningful comparison points between the main pole's attacher heights and the reference span's lowest point (which is still derived from the midpoint photo data in the "Mid-Span Existing/Proposed Height" columns in the main sheet).
-    *   The Excel output is now aligned with the intended purpose of reference spans in the utility make-ready workflow.
-
-This fix ensures that the reference data in the Excel report is accurate and serves its intended purpose of providing valid comparison points for the main pole's attachment heights.
+**Result:**
+The `get_reference_attachers` method now correctly identifies attachers present on reference spans but retrieves their associated heights from the main pole's data. This resolves the `NameError` and ensures that the Excel output (both the main sheet and the 'refs' sheet) accurately reflects the main pole's attacher heights for reference spans.

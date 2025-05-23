@@ -344,6 +344,98 @@ class FileProcessor:
                         print(f"Height parse error: {str(e)}")
         return heights
 
+    def get_main_pole_attacher_heights(self, job_data, node_id):
+        """Get a dictionary of attacher heights from the main pole's main photo
+        Returns: {attacher_name: {'existing': str, 'proposed': str, 'raw_height': float}}
+        """
+        heights_lookup = {}
+        # Get the node's photos
+        node_photos = job_data.get("nodes", {}).get(node_id, {}).get("photos", {})
+        # Find the main photo
+        main_photo_id = next((pid for pid, pdata in node_photos.items() if pdata.get("association") == "main"), None)
+
+        if main_photo_id:
+            # Get photofirst_data from the main photo
+            photo_data = job_data.get("photos", {}).get(main_photo_id, {})
+            photofirst_data = photo_data.get("photofirst_data", {})
+
+            if photofirst_data:
+                # Get trace_data
+                trace_data = job_data.get("traces", {}).get("trace_data", {})
+
+                # Process all categories in unified way
+                for category in ["wire", "equipment", "guying"]:
+                    for item_key, item_value in photofirst_data.get(category, {}).items():
+                        if not isinstance(item_value, dict): continue
+
+                        trace_id = item_value.get("_trace")
+                        if not trace_id or trace_id not in trace_data: continue
+
+                        trace_info = trace_data[trace_id]
+                        company = trace_info.get("company", "").strip()
+
+                        item_type_str = ""
+                        if category == "wire":
+                            item_type_str = trace_info.get("cable_type", "").strip()
+                            if item_type_str.lower() == "primary": continue
+                        elif category == "equipment":
+                            item_type_str = trace_info.get("equipment_type", "").strip()
+                            if not item_type_str:
+                                item_type_str = item_value.get("equipment_type", "").strip()
+                        elif category == "guying":
+                            item_type_str = trace_info.get("cable_type", "").strip()
+
+                        if not company or not item_type_str: continue
+
+                        attacher_name = f"{company} {item_type_str}"
+                        if category == "guying":
+                             attacher_name += " (Guy)"
+
+                        measured_height_str = item_value.get("_measured_height")
+                        if measured_height_str is None: continue
+
+                        try:
+                            measured_height_val = float(measured_height_str)
+                        except (ValueError, TypeError): continue
+
+                        # Get movement data
+                        mr_move_str = item_value.get("mr_move", "0")
+                        effective_moves = item_value.get("_effective_moves", {})
+
+                        total_move_inches = 0.0
+                        try:
+                            total_move_inches = float(mr_move_str if mr_move_str is not None else 0.0)
+                        except (ValueError, TypeError): pass
+
+                        if isinstance(effective_moves, dict):
+                            for move_val_str in effective_moves.values():
+                                try:
+                                    total_move_inches += float(move_val_str if move_val_str is not None else 0.0)
+                                except (ValueError, TypeError): continue
+
+                        proposed_height_fmt = ""
+                        is_proposed = trace_info.get("proposed", False)
+
+                        if is_proposed:
+                            proposed_height_fmt = self.format_height_feet_inches(measured_height_val)
+                            existing_height_fmt = ""
+                        elif abs(total_move_inches) > 0.01:
+                            proposed_height_val = measured_height_val + total_move_inches
+                            proposed_height_fmt = self.format_height_feet_inches(proposed_height_val)
+                            existing_height_fmt = self.format_height_feet_inches(measured_height_val)
+                        else:
+                             existing_height_fmt = self.format_height_feet_inches(measured_height_val)
+
+
+                        heights_lookup[attacher_name] = {
+                            'existing': existing_height_fmt,
+                            'proposed': proposed_height_fmt,
+                            'raw_height': measured_height_val
+                        }
+
+        return heights_lookup
+
+
     def get_neutral_wire_height(self, job_data, node_id):
         """Find the height of the neutral wire for a given node"""
         # Get the node's photos
@@ -903,6 +995,9 @@ class FileProcessor:
         
         nodes_data = job_data.get("nodes", {})
         neutral_height = self.get_neutral_wire_height(job_data, current_node_id) # Used for filtering
+
+        # GET MAIN POLE HEIGHTS LOOKUP - This was missing!
+        main_pole_attachers_lookup = self.get_main_pole_attacher_heights(job_data, current_node_id)
 
         for conn_id, conn_data in job_data.get("connections", {}).items():
             # Use the new helper function to check if this is a valid reference connection
@@ -2049,26 +2144,27 @@ class FileProcessor:
                     continue
 
                 # Fetch attacher_data for the current main pole being processed for the "refs" sheet
+                # This call is needed here to get the attacher_data for the main pole
+                # to determine if there are any reference spans associated with it.
+                # The lookup itself is now generated inside get_reference_attachers.
                 attacher_data = self.get_attachers_for_node(job_data, node_id_main)
-                
-                main_pole_attachers_lookup = {
-                    att['name']: {
-                        'existing': att['existing_height'],
-                        'proposed': att['proposed_height']
-                    } for att in attacher_data.get('main_attachers', [])
-                }
+
+                # We still need the main pole attacher lookup here to populate columns N and O
+                # in the 'refs' sheet with the main pole's heights.
+                main_pole_attachers_lookup = self.get_main_pole_attacher_heights(job_data, node_id_main)
 
                 data_actually_written_for_pole_refs = False # Initialize flag for "002.A" logic
                 if attacher_data and 'reference_spans' in attacher_data:
                     for ref_span_detail in attacher_data['reference_spans']:
-                        # pole_has_outgoing_refs = True # This line is no longer needed / replaced by data_actually_written_for_pole_refs
                         ref_structure_scid = ref_span_detail.get('ref_scid', 'Unknown Ref SCID')
                         
                         for attacher_on_ref_span in ref_span_detail.get('data', []):
                             attacher_name = attacher_on_ref_span.get('name', '')
+                            # These heights are from the ref span's mid-point photo, used for columns P and Q
                             mid_span_existing_h = attacher_on_ref_span.get('existing_height', '')
                             mid_span_proposed_h = attacher_on_ref_span.get('proposed_height', '')
 
+                            # Look up heights from the main pole's attacher data for columns N and O
                             main_pole_heights = main_pole_attachers_lookup.get(attacher_name, {'existing': '', 'proposed': ''})
                             main_pole_existing_h = main_pole_heights['existing']
                             main_pole_proposed_h = main_pole_heights['proposed']
@@ -2083,7 +2179,7 @@ class FileProcessor:
                             ref_sheet.write(ref_row_num, 7, mid_span_existing_h)  # Column Q: Mid-Span Existing Height (Header: Mid-Span Proposed Height)
                             data_actually_written_for_pole_refs = True # Set flag as data was written
                             ref_row_num += 1
-                
+            
                 # Check for "002.A" SCID for the main pole
                 if "002.A" in str(scid_main):
                     if not data_actually_written_for_pole_refs: # Only add if no ref data was actually written for this pole
