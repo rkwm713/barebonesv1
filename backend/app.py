@@ -228,7 +228,7 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "ok", "version": "2.0.0", "framework": "FastAPI"}
 
-@app.post("/api/upload", response_model=UploadResponse)
+@app.post("/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):
     """Upload a JSON file for processing"""
     # Validate file
@@ -263,7 +263,7 @@ async def upload_file(file: UploadFile = File(...)):
         status='queued'
     )
 
-@app.get("/api/tasks/{task_id}/status", response_model=TaskStatus)
+@app.get("/tasks/{task_id}/status", response_model=TaskStatus)
 async def get_task_status(task_id: str):
     """Get the status of a processing task"""
     if task_id not in processing_tasks:
@@ -272,7 +272,7 @@ async def get_task_status(task_id: str):
     task = processing_tasks[task_id]
     return TaskStatus(**task)
 
-@app.get("/api/tasks/{task_id}/download/{file_type}")
+@app.get("/tasks/{task_id}/download/{file_type}")
 async def download_file(task_id: str, file_type: str):
     """Download a processed file"""
     if task_id not in processing_tasks:
@@ -313,7 +313,7 @@ async def download_file(task_id: str, file_type: str):
         headers=headers
     )
 
-@app.delete("/api/tasks/{task_id}")
+@app.delete("/tasks/{task_id}")
 async def cleanup_task(task_id: str):
     """Clean up a task and its associated files"""
     if task_id not in processing_tasks:
