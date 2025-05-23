@@ -1,0 +1,21 @@
+Summary of Reference Span Height Source Fix in barebones.py
+
+This document summarizes the fix implemented in the `get_reference_attachers` function within `barebones.py` to ensure that the heights reported for reference span attachers in the "refs" sheet are sourced from the main construction pole's data, not the reference span's midpoint photo data.
+
+1.  **Problem:**
+    *   Previously, when identifying attachers on a reference span (e.g., Pole 003 → 003A), the code would find attachers in the reference span's midpoint photo and use the measured heights from that photo.
+    *   This was incorrect because the "refs" sheet is intended to show the heights of those same attachers *on the main construction pole* (Pole 003 in the example) for comparison purposes. Using heights from the reference pole (003A) was misleading.
+
+2.  **Solution:**
+    *   Modified the `get_reference_attachers` function.
+    *   At the beginning of the function, it now retrieves the attacher data (including existing and proposed heights) for the `current_node_id` (the main construction pole) using `self.get_attachers_for_node()`.
+    *   A lookup dictionary (`main_pole_attachers_lookup`) is created from this main pole data.
+    *   Within the loop that processes attachers found in the reference span's midpoint photo, instead of using the heights measured at the midpoint, the code now looks up the attacher name in the `main_pole_attachers_lookup` dictionary.
+    *   The existing and proposed heights from the main pole's data are then used when creating the dictionary for `span_attachers`.
+
+3.  **Benefits:**
+    *   The heights reported for reference span attachers in the "refs" sheet now accurately reflect the heights of those attachers on the main construction pole.
+    *   This provides correct and meaningful comparison points between the main pole's attacher heights and the reference span's lowest point (which is still derived from the midpoint photo data in the "Mid-Span Existing/Proposed Height" columns in the main sheet).
+    *   The Excel output is now aligned with the intended purpose of reference spans in the utility make-ready workflow.
+
+This fix ensures that the reference data in the Excel report is accurate and serves its intended purpose of providing valid comparison points for the main pole's attachment heights.
