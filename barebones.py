@@ -908,8 +908,14 @@ class FileProcessor:
             # Use the new helper function to check if this is a valid reference connection
             if is_reference_connection(conn_data, nodes_data, current_node_id):
                 
-                pole_id = current_node_id
-                ref_id = conn_data.get("node_id_2") if conn_data.get("node_id_1") == current_node_id else conn_data.get("node_id_1")
+                # ONLY process if current_node_id is node_id_1 (FROM pole TO reference)
+                if conn_data.get("node_id_1") == current_node_id:
+                    pole_id = current_node_id
+                    ref_id = conn_data.get("node_id_2")
+                else:
+                    # Skip this connection - we only want references going FROM current pole
+                    self.logger.log_item_skipped("ReferenceSpan", f"Conn {conn_id}", "Skipped - not originating from current pole")
+                    continue
 
                 if not ref_id: continue
 

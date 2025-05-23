@@ -1,0 +1,30 @@
+Summary of Unidirectional Reference Logic Implementation in barebones.py
+
+This document summarizes the implementation of unidirectional reference span processing logic in the `get_reference_attachers` function within `barebones.py`.
+
+1.  **Problem:**
+    *   The previous logic for identifying reference spans was bidirectional. It would process a connection as a reference span if either `node_id_1` or `node_id_2` matched the current pole being processed.
+    *   This led to incorrect "reverse" reference spans being identified when processing the reference pole (node_id_2) instead of the main construction pole (node_id_1).
+    *   This caused issues with accurate reporting, including false make-ready operations and inflated counts on reference poles.
+
+2.  **Solution:**
+    *   Modified the `get_reference_attachers` function to implement unidirectional processing.
+    *   Added a check at the beginning of the reference connection processing loop:
+        ```python
+        if conn_data.get("node_id_1") == current_node_id:
+            # Process the connection as a reference span
+            ...
+        else:
+            # Skip this connection
+            continue
+        ```
+    *   This ensures that a connection is only considered a reference span *from* the `current_node_id` if the `current_node_id` matches `node_id_1` of the connection.
+
+3.  **Benefits:**
+    *   Reference spans are now processed only in the intended direction (main construction pole → reference pole).
+    *   Reference poles (those that are `node_id_2` in a reference connection) no longer generate false make-ready operations or appear to have work performed unless they are also main construction poles in other connections.
+    *   Work summaries, costs, and operation counts are more accurate and reflect the actual scope of make-ready work.
+    *   The data structure and reporting align more closely with real-world utility make-ready workflows and regulatory compliance requirements.
+    *   Added logging to track connections skipped by this new unidirectional logic.
+
+This change ensures clean, unambiguous reference relationships and improves the overall accuracy of the generated Excel reports.
