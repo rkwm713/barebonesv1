@@ -1,0 +1,391 @@
+import os
+import uuid
+import io
+import asyncio
+import json
+import logging
+import time
+from datetime import datetime
+from typing import Dict, Any, Optional
+from pathlib import Path
+
+from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from barebones import FileProcessor
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Create FastAPI app
+app = FastAPI(title="MakeReady Report Generator API")
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with specific origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# In-memory storage for processing tasks
+processing_tasks: Dict[str, Dict[str, Any]] = {}
+
+# WebSocket connection manager
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, WebSocket] = {}
+
+    async def connect(self, websocket: WebSocket, task_id: str):
+        await websocket.accept()
+        self.active_connections[task_id] = websocket
+
+    def disconnect(self, task_id: str):
+        if task_id in self.active_connections:
+            del self.active_connections[task_id]
+
+    async def send_status(self, task_id: str, data: dict):
+        if task_id in self.active_connections:
+            try:
+                # Create a JSON-serializable version of the task data
+                serializable_data = {
+                    "task_id": data.get("task_id"),
+                    "filename": data.get("filename"),
+                    "status": data.get("status"),
+                    "created": data.get("created"),
+                    "progress": data.get("progress", 0),
+                    "files": data.get("files", []),
+                    "error": data.get("error")
+                }
+                await self.active_connections[task_id].send_json(serializable_data)
+            except Exception as e:
+                logger.error(f"Error sending WebSocket message: {e}")
+
+manager = ConnectionManager()
+
+# Pydantic models
+class TaskStatus(BaseModel):
+    task_id: str
+    filename: str
+    status: str
+    created: str
+    progress: Optional[int] = 0
+    files: Optional[list] = []
+    error: Optional[str] = None
+
+class UploadResponse(BaseModel):
+    task_id: str
+    filename: str
+    status: str
+
+# Helper functions
+def allowed_file(filename: str) -> bool:
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() == 'json'
+
+async def process_file_async(file_content: bytes, filename: str, task_id: str):
+    """Process file asynchronously"""
+    logger.info(f"Starting async processing for task {task_id}")
+    
+    try:
+        # Update status to processing
+        processing_tasks[task_id]['status'] = 'processing'
+        processing_tasks[task_id]['progress'] = 10
+        
+        # Send WebSocket update
+        await manager.send_status(task_id, processing_tasks[task_id])
+        
+        # Run processor in thread pool to not block async loop
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, 
+            process_file_sync, 
+            file_content, 
+            filename, 
+            task_id
+        )
+        
+        if result:
+            processing_tasks[task_id]['status'] = 'complete'
+            processing_tasks[task_id]['progress'] = 100
+            await manager.send_status(task_id, processing_tasks[task_id])
+        else:
+            processing_tasks[task_id]['status'] = 'failed'
+            processing_tasks[task_id]['error'] = 'Processing failed'
+            await manager.send_status(task_id, processing_tasks[task_id])
+            
+    except Exception as e:
+        logger.error(f"Error in async processing: {str(e)}")
+        processing_tasks[task_id]['status'] = 'failed'
+        processing_tasks[task_id]['error'] = str(e)
+        await manager.send_status(task_id, processing_tasks[task_id])
+
+def process_file_sync(file_content: bytes, filename: str, task_id: str) -> bool:
+    """Process file synchronously using FileProcessor"""
+    logger.info(f"Starting sync processing for task {task_id}")
+    
+    # Create a temp directory if it doesn't exist
+    os.makedirs('temp', exist_ok=True)
+    
+    # Use a path within the temp directory
+    temp_file_path = os.path.join('temp', f"{task_id}_{filename}")
+    
+    try:
+        # Save temp file for processing
+        with open(temp_file_path, 'wb') as f:
+            f.write(file_content)
+        
+        # Update progress
+        processing_tasks[task_id]['progress'] = 30
+        
+        # Initialize the processor
+        processor = FileProcessor()
+        
+        # Get filename without extension for output naming
+        base_filename = os.path.splitext(filename)[0]
+        
+        # Process the file
+        success = processor.process_files(temp_file_path)
+        
+        if success:
+            # Update progress
+            processing_tasks[task_id]['progress'] = 70
+            
+            # Store output files in memory
+            output_files = []
+            
+            # Find the generated Excel file
+            downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
+            excel_files = [f for f in os.listdir(downloads_path) if f.startswith(f"{base_filename}_") and f.endswith(".xlsx")]
+            log_files = [f for f in os.listdir(downloads_path) if f.startswith(f"{base_filename}_") and f.endswith("_Log.txt")]
+            
+            if excel_files:
+                latest_excel = max(excel_files, key=lambda f: os.path.getmtime(os.path.join(downloads_path, f)))
+                excel_path = os.path.join(downloads_path, latest_excel)
+                excel_filename = f"{base_filename}_{task_id}.xlsx"
+                
+                # Store file data in memory
+                with open(excel_path, 'rb') as f:
+                    excel_data = io.BytesIO(f.read())
+                    excel_data.seek(0)
+                
+                # Save to task
+                processing_tasks[task_id]['excel_data'] = excel_data
+                output_files.append({'type': 'excel', 'filename': excel_filename})
+                
+                # Clean up the file from downloads
+                try:
+                    os.remove(excel_path)
+                except:
+                    pass
+            
+            if log_files:
+                latest_log = max(log_files, key=lambda f: os.path.getmtime(os.path.join(downloads_path, f)))
+                log_path = os.path.join(downloads_path, latest_log)
+                log_filename = f"{base_filename}_{task_id}_Log.txt"
+                
+                # Store file data in memory
+                with open(log_path, 'rb') as f:
+                    log_data = io.BytesIO(f.read())
+                    log_data.seek(0)
+                
+                # Save to task
+                processing_tasks[task_id]['log_data'] = log_data
+                output_files.append({'type': 'log', 'filename': log_filename})
+                
+                # Clean up the file from downloads
+                try:
+                    os.remove(log_path)
+                except:
+                    pass
+            
+            # Update task with files
+            processing_tasks[task_id]['files'] = output_files
+            processing_tasks[task_id]['progress'] = 90
+            
+            return True
+        else:
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error processing file: {str(e)}")
+        return False
+    finally:
+        # Clean up temp file
+        try:
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+        except Exception as e:
+            logger.error(f"Error removing temp file: {str(e)}")
+
+# API Routes
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "ok", "version": "2.0.0", "framework": "FastAPI"}
+
+@app.post("/api/upload", response_model=UploadResponse)
+async def upload_file(file: UploadFile = File(...)):
+    """Upload a JSON file for processing"""
+    # Validate file
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file selected")
+    
+    if not allowed_file(file.filename):
+        raise HTTPException(status_code=400, detail="Invalid file type. Only JSON files are allowed.")
+    
+    # Generate task ID
+    task_id = str(uuid.uuid4())
+    
+    # Read file content
+    content = await file.read()
+    
+    # Create task entry
+    processing_tasks[task_id] = {
+        'task_id': task_id,
+        'filename': file.filename,
+        'status': 'queued',
+        'created': datetime.now().isoformat(),
+        'progress': 0,
+        'files': []
+    }
+    
+    # Process file in background
+    asyncio.create_task(process_file_async(content, file.filename, task_id))
+    
+    return UploadResponse(
+        task_id=task_id,
+        filename=file.filename,
+        status='queued'
+    )
+
+@app.get("/api/tasks/{task_id}/status", response_model=TaskStatus)
+async def get_task_status(task_id: str):
+    """Get the status of a processing task"""
+    if task_id not in processing_tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task = processing_tasks[task_id]
+    return TaskStatus(**task)
+
+@app.get("/api/tasks/{task_id}/download/{file_type}")
+async def download_file(task_id: str, file_type: str):
+    """Download a processed file"""
+    if task_id not in processing_tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task = processing_tasks[task_id]
+    
+    # Check file type and get appropriate data
+    if file_type == "excel" and 'excel_data' in task:
+        file_data = task['excel_data']
+        filename = next((f['filename'] for f in task['files'] if f['type'] == 'excel'), 'output.xlsx')
+        media_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    elif file_type == "log" and 'log_data' in task:
+        file_data = task['log_data']
+        filename = next((f['filename'] for f in task['files'] if f['type'] == 'log'), 'output.txt')
+        media_type = 'text/plain'
+    else:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Reset file position
+    file_data.seek(0)
+    
+    # Add cache-busting and version headers
+    headers = {
+        "Content-Disposition": f"attachment; filename={filename}",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache", 
+        "Expires": "0",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "X-Report-Version": "2.0.0",
+        "X-Generated-At": datetime.now().isoformat()
+    }
+    
+    return StreamingResponse(
+        file_data,
+        media_type=media_type,
+        headers=headers
+    )
+
+@app.delete("/api/tasks/{task_id}")
+async def cleanup_task(task_id: str):
+    """Clean up a task and its associated files"""
+    if task_id not in processing_tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Remove task from memory
+    del processing_tasks[task_id]
+    
+    return {"status": "cleaned"}
+
+@app.websocket("/ws/tasks/{task_id}")
+async def websocket_endpoint(websocket: WebSocket, task_id: str):
+    """WebSocket endpoint for real-time task updates"""
+    await manager.connect(websocket, task_id)
+    
+    try:
+        # Send initial status if task exists
+        if task_id in processing_tasks:
+            task_data = processing_tasks[task_id]
+            serializable_data = {
+                "task_id": task_data.get("task_id"),
+                "filename": task_data.get("filename"),
+                "status": task_data.get("status"),
+                "created": task_data.get("created"),
+                "progress": task_data.get("progress", 0),
+                "files": task_data.get("files", []),
+                "error": task_data.get("error")
+            }
+            await websocket.send_json(serializable_data)
+        
+        # Keep connection alive
+        while True:
+            await websocket.receive_text()
+            
+    except WebSocketDisconnect:
+        manager.disconnect(task_id)
+
+# Cleanup old tasks periodically (every hour)
+async def cleanup_old_tasks():
+    """Remove tasks older than 1 hour"""
+    while True:
+        try:
+            current_time = datetime.now()
+            tasks_to_remove = []
+            
+            for task_id, task in processing_tasks.items():
+                created_time = datetime.fromisoformat(task['created'])
+                if (current_time - created_time).seconds > 3600:  # 1 hour
+                    tasks_to_remove.append(task_id)
+            
+            for task_id in tasks_to_remove:
+                del processing_tasks[task_id]
+                logger.info(f"Cleaned up old task: {task_id}")
+            
+            await asyncio.sleep(3600)  # Check every hour
+        except Exception as e:
+            logger.error(f"Error in cleanup task: {e}")
+            await asyncio.sleep(3600)
+
+# Serve static files from React build
+static_files_path = Path(__file__).parent.parent / "frontend" / "dist"
+if static_files_path.exists():
+    app.mount("/", StaticFiles(directory=str(static_files_path), html=True), name="static")
+else:
+    logger.warning(f"Frontend build directory not found at {static_files_path}")
+
+@app.on_event("startup")
+async def startup_event():
+    """Start background tasks on app startup"""
+    asyncio.create_task(cleanup_old_tasks())
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get('PORT', 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

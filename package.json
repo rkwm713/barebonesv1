@@ -1,0 +1,14 @@
+{
+  "name": "barebones-fullstack",
+  "version": "1.0.0",
+  "description": "MakeReady Report Generator - FastAPI + React",
+  "scripts": {
+    "postinstall": "cd frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "heroku-postbuild": "cd frontend && npm install && npm run build"
+  },
+  "engines": {
+    "node": "18.x",
+    "npm": "9.x"
+  }
+}

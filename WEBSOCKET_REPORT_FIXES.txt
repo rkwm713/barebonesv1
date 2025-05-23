@@ -1,0 +1,93 @@
+=== WEBSOCKET AND REPORT VERSION FIXES ===
+Date: 2025-01-23 00:43:00
+Report Generator Version: 2.0.0
+
+ISSUES ADDRESSED:
+1. WebSocket connection rapidly opening/closing causing 404 errors
+2. Reports appearing to be an older version
+
+FIXES IMPLEMENTED:
+
+=== WebSocket Connection Fixes ===
+
+File: frontend/src/hooks/useTaskStatus.ts
+- Added cleanup flag (isCleanedUpRef) to prevent multiple cleanups
+- Improved WebSocket error handling with proper fallback to polling
+- Added 404 error detection to stop polling when tasks are deleted
+- Implemented exponential backoff for polling errors (5 second retry)
+- Added proper connection state tracking
+- Enhanced logging for debugging WebSocket events
+- Fixed TypeScript errors with null taskId handling
+
+Key Changes:
+- Cleanup function now prevents multiple executions
+- WebSocket connections properly closed when tasks complete
+- 404 responses trigger immediate cleanup (no more endless polling)
+- Exponential backoff prevents rapid retry loops
+- Better connection state management
+
+=== Backend Download Improvements ===
+
+File: backend/app.py
+- Added cache-busting headers to file downloads:
+  * Cache-Control: no-cache, no-store, must-revalidate
+  * Pragma: no-cache
+  * Expires: 0
+- Added version headers:
+  * X-Report-Version: 2.0.0
+  * X-Generated-At: [timestamp]
+- Added security headers:
+  * X-Content-Type-Options: nosniff
+  * X-Frame-Options: DENY
+
+=== Report Generation Improvements ===
+
+File: backend/barebones.py
+- Added debug logging with timestamps in create_output_excel()
+- Enhanced report generation tracking
+- Ensured fresh Excel file generation every time
+
+=== Expected Results ===
+
+After these fixes:
+1. WebSocket connections should no longer rapidly reconnect
+2. No more 404 error spam in server logs
+3. Proper cleanup when tasks complete or are deleted
+4. Reports will have cache-busting headers ensuring fresh downloads
+5. Version information included in download headers
+6. Better error handling and connection management
+
+=== Testing Recommendations ===
+
+1. Upload a JSON file and monitor browser console for WebSocket logs
+2. Check that connections properly close when processing completes
+3. Verify downloaded reports have latest formatting and version headers
+4. Confirm no 404 errors appear after task completion
+
+=== Technical Details ===
+
+WebSocket Flow:
+1. Connect to ws://localhost:8000/ws/tasks/{task_id}
+2. Receive status updates during processing
+3. On completion/failure, cleanup() is called
+4. Connection closes with code 1000 (normal closure)
+5. No further polling attempts after cleanup
+
+Download Headers:
+- Reports now include generation timestamp
+- Cache headers prevent browser caching of old versions
+- Version headers allow tracking which code generated the report
+
+=== Logging Added ===
+
+Frontend console will now show:
+- WebSocket connection events
+- Task completion/cleanup events
+- 404 detection and cleanup triggers
+
+Backend logs will show:
+- Report generation timestamps
+- Excel file creation confirmation
+- Processing completion status
+
+These fixes should resolve both the WebSocket connection issues and ensure you always get the latest version of generated reports.
