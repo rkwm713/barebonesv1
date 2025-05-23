@@ -1,37 +1,59 @@
 # Heroku Deployment Fix Applied
 
-## Issue Fixed
+## Issues Fixed
+
+### 1. Root Route 404 Error
 The root route (/) was returning a 404 error because the frontend static files were not being served correctly. This happened because:
 
-1. The Procfile was running the FastAPI app from the `/backend` directory: `cd backend && uvicorn app:app ...`
-2. The static file path calculation in `backend/app.py` uses a relative path based on the working directory:
-   ```python
-   static_files_path = Path(__file__).parent.parent / "frontend" / "dist"
-   ```
-3. When running from the `/backend` directory, this path calculation couldn't find the frontend build directory.
+- The Procfile was running the FastAPI app from the `/backend` directory: `cd backend && uvicorn app:app ...`
+- The static file path calculation in `backend/app.py` uses a relative path based on the working directory:
+  ```python
+  static_files_path = Path(__file__).parent.parent / "frontend" / "dist"
+  ```
+- When running from the `/backend` directory, this path calculation couldn't find the frontend build directory.
 
-## Solution Implemented
-The Procfile was updated to run the FastAPI app from the project root:
+### 2. Frontend Build Failure
+The frontend build was failing on Heroku with the error: `sh: 1: tsc: not found`. This occurred because:
+
+- The build script in `frontend/package.json` was using the `tsc` command directly, which wasn't available in the Heroku environment
+- The `heroku-postbuild` script had an incorrect path for verifying the build output
+
+## Solutions Implemented
+
+### 1. Fixed Procfile
+Updated the Procfile to run the FastAPI app from the project root:
 ```
 web: uvicorn backend.app:app --host 0.0.0.0 --port $PORT
 ```
 
 This ensures that the static file path calculation in `backend/app.py` works correctly, allowing the FastAPI app to serve the React frontend at the root URL.
 
+### 2. Fixed Frontend Build Process
+1. Modified the frontend build script to use the local TypeScript installation:
+   ```json
+   "build": "npx tsc && vite build"
+   ```
+
+2. Fixed the path in the `heroku-postbuild` script for verifying the build output:
+   ```json
+   "heroku-postbuild": "... && ls -la dist/ && ..."
+   ```
+   (Changed from `ls -la frontend/dist/`)
+
 ## Benefits
 - The root route (/) will now correctly serve the React frontend
-- No code changes were needed in the backend
+- The frontend build process completes successfully on Heroku
 - Path calculations remain consistent with the project structure
-- The frontend build process remains unchanged
+- No code changes were needed in the backend application logic
 
 ## Verification
-After deploying this change to Heroku, verify that:
-1. The root URL no longer returns a 404 error
-2. The frontend is correctly displayed when visiting the root URL
-3. API endpoints at `/api/*` continue to work as expected
-4. The automatic documentation at `/docs` is still accessible
+After deploying these changes to Heroku, verify that:
+1. The build completes successfully without any TypeScript errors
+2. The root URL no longer returns a 404 error
+3. The frontend is correctly displayed when visiting the root URL
+4. API endpoints at `/api/*` continue to work as expected
+5. The automatic documentation at `/docs` is still accessible
 
 ## Additional Notes
-- This fix preserves the existing Node.js buildpack and `heroku-postbuild` script that builds the frontend
-- No changes to the frontend code or build process were necessary
+- These fixes preserve the existing Node.js and Python buildpacks
 - The app structure remains clean with backend code in the `/backend` directory and frontend code in the `/frontend` directory
