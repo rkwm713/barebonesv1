@@ -62,7 +62,11 @@ def process_file(file_content, filename, task_id):
                 output_files = []
                 
                 # Find the generated Excel file
-                downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
+                # Use /tmp directory on Heroku, otherwise use Downloads folder
+                if os.environ.get('DYNO'):  # Heroku sets DYNO environment variable
+                    downloads_path = "/tmp"
+                else:
+                    downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
                 excel_files = [f for f in os.listdir(downloads_path) if f.startswith(f"{base_filename}_") and f.endswith(".xlsx")]
                 log_files = [f for f in os.listdir(downloads_path) if f.startswith(f"{base_filename}_") and f.endswith("_Log.txt")]
                 

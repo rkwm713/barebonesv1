@@ -1,0 +1,51 @@
+=== HEROKU DOWNLOADS PATH FIX ===
+Date: May 23, 2025
+Issue: OSError: Cannot save file into a non-existent directory: '/app/Downloads'
+
+PROBLEM:
+The application was trying to save files to ~/Downloads which translates to /app/Downloads on Heroku.
+Heroku's filesystem is read-only except for the /tmp directory.
+
+SOLUTION:
+Updated FileProcessor class to detect when running on Heroku (via DYNO environment variable) 
+and use /tmp directory instead of ~/Downloads.
+
+FILES MODIFIED:
+1. backend/barebones.py
+2. barebones.py  
+3. app.py
+
+CHANGES MADE:
+In FileProcessor.__init__() method:
+```python
+def __init__(self):
+    # Use /tmp directory on Heroku, otherwise use Downloads folder
+    if os.environ.get('DYNO'):  # Heroku sets DYNO environment variable
+        self.downloads_path = "/tmp"
+    else:
+        self.downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
+    self.job_data = None
+    self.logger = ProcessingLogger()
+```
+
+In app.py process_file() function:
+```python
+# Use /tmp directory on Heroku, otherwise use Downloads folder
+if os.environ.get('DYNO'):  # Heroku sets DYNO environment variable
+    downloads_path = "/tmp"
+else:
+    downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
+```
+
+NOTE: backend/app.py was already using /tmp directory and didn't need modification.
+
+TESTING:
+The fix should now allow the application to run successfully on Heroku by using the writable /tmp directory
+instead of trying to create files in the non-existent /app/Downloads directory.
+
+DEPLOYMENT:
+After applying these changes, commit and push to Heroku:
+```bash
+git add -A
+git commit -m "Fix file storage path for Heroku deployment"
+git push heroku main

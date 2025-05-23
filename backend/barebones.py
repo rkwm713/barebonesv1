@@ -151,7 +151,11 @@ class ProcessingLogger:
 
 class FileProcessor:
     def __init__(self):
-        self.downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
+        # Use /tmp directory on Heroku, otherwise use Downloads folder
+        if os.environ.get('DYNO'):  # Heroku sets DYNO environment variable
+            self.downloads_path = "/tmp"
+        else:
+            self.downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
         self.job_data = None
         self.logger = ProcessingLogger()
 
