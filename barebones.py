@@ -482,13 +482,21 @@ class FileProcessor:
                     proposed_height_val = measured_height_val + total_move_inches
                     proposed_height_fmt = self.format_height_feet_inches(proposed_height_val)
                 
+                is_proposed = trace_info.get("proposed", False)
+
+                # --- NEW ---
+                if is_proposed:                      # new attacher → blank out “existing”
+                    proposed_height_fmt = existing_height_fmt
+                    existing_height_fmt = ""
+                # -----------
+
                 # Add to main attachers
                 main_attacher_data.append({
                     'name': attacher_name,
                     'existing_height': existing_height_fmt,
                     'proposed_height': proposed_height_fmt,
                     'raw_height': measured_height_val,  # Keep raw for sorting
-                    'is_proposed': trace_info.get("proposed", False)  # For movement summary
+                    'is_proposed': is_proposed,  # For movement summary
                 })
                 
                 # Log successful processing

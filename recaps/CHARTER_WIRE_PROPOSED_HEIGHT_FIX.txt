@@ -1,0 +1,10 @@
+Applied a patch to `barebones.py` in the `get_attachers_for_node` function.
+
+The patch addresses an issue where new Charter wires (marked with `proposed=True`) were incorrectly showing their design height in the "Attachment Height - Existing" column instead of the "Attachment Height - Proposed" column in the Excel output.
+
+The fix involves:
+1. Retrieving the `is_proposed` flag from `trace_info`.
+2. If `is_proposed` is `True`:
+   - The `proposed_height_fmt` is set to the value of `existing_height_fmt`.
+   - The `existing_height_fmt` is set to an empty string.
+This ensures that for new proposed attachers, the height appears only in the "Proposed" column.
