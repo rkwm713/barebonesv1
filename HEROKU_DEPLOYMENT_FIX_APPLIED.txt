@@ -15,8 +15,15 @@ The root route (/) was returning a 404 error because the frontend static files w
 ### 2. Frontend Build Failure
 The frontend build was failing on Heroku with the error: `sh: 1: tsc: not found`. This occurred because:
 
-- The build script in `frontend/package.json` was using the `tsc` command directly, which wasn't available in the Heroku environment
+- Heroku sets `NODE_ENV=production`, so `npm ci` skips all devDependencies by default
+- TypeScript is in devDependencies, so the TypeScript compiler wasn't available during build
 - The `heroku-postbuild` script had an incorrect path for verifying the build output
+
+### 3. Buildpack Order
+The buildpack order (Python then Node) might lead to race conditions where the Python app starts before the frontend is fully built.
+
+### 4. Runtime.txt Deprecation
+The `runtime.txt` file is deprecated and generating warnings during deployment.
 
 ## Solutions Implemented
 
@@ -29,31 +36,53 @@ web: uvicorn backend.app:app --host 0.0.0.0 --port $PORT
 This ensures that the static file path calculation in `backend/app.py` works correctly, allowing the FastAPI app to serve the React frontend at the root URL.
 
 ### 2. Fixed Frontend Build Process
-1. Modified the frontend build script to use the local TypeScript installation:
-   ```json
-   "build": "npx tsc && vite build"
-   ```
+Updated the `heroku-postbuild` script to properly install devDependencies:
+```json
+"heroku-postbuild": "echo 'Starting Heroku build process...' && NPM_CONFIG_PRODUCTION=false npm --prefix frontend ci && echo 'Building frontend...' && npm --prefix frontend run build && echo 'Build complete. Verifying...' && ls -la frontend/dist/ && echo 'Frontend ready for deployment'"
+```
 
-2. Fixed the path in the `heroku-postbuild` script for verifying the build output:
-   ```json
-   "heroku-postbuild": "... && ls -la dist/ && ..."
-   ```
-   (Changed from `ls -la frontend/dist/`)
+This change:
+- Sets `NPM_CONFIG_PRODUCTION=false` to ensure devDependencies (including TypeScript) are installed
+- Uses `npm --prefix frontend` to run commands in the frontend directory
+- Ensures the correct path is used for verification
+
+### 3. Maintained Correct Buildpack Order
+Ensured buildpacks are in the correct order in `.buildpacks`:
+```
+https://github.com/heroku/heroku-buildpack-nodejs
+https://github.com/heroku/heroku-buildpack-python
+```
+
+This ensures the Node.js buildpack runs first to build the frontend, and then the Python buildpack sets up the backend.
+
+### 4. Replaced runtime.txt with .python-version
+Created a `.python-version` file with:
+```
+3.11
+```
+
+This replaces the deprecated `runtime.txt` file and follows Heroku's recommended approach, which will:
+- Silence the deprecation warning
+- Automatically track the latest 3.11 patch version (currently 3.11.12)
+- Ensure security updates are applied automatically
 
 ## Benefits
 - The root route (/) will now correctly serve the React frontend
-- The frontend build process completes successfully on Heroku
-- Path calculations remain consistent with the project structure
+- The frontend build process completes successfully on Heroku with all dependencies
+- The buildpack order ensures the frontend is built before the backend starts
+- No more deprecation warnings during deployment
+- Automatic security updates for Python
 - No code changes were needed in the backend application logic
 
 ## Verification
 After deploying these changes to Heroku, verify that:
 1. The build completes successfully without any TypeScript errors
-2. The root URL no longer returns a 404 error
-3. The frontend is correctly displayed when visiting the root URL
-4. API endpoints at `/api/*` continue to work as expected
-5. The automatic documentation at `/docs` is still accessible
+2. No deprecation warnings appear in the logs
+3. The root URL no longer returns a 404 error
+4. The frontend is correctly displayed when visiting the root URL
+5. API endpoints at `/api/*` continue to work as expected
+6. The automatic documentation at `/docs` is still accessible
 
 ## Additional Notes
-- These fixes preserve the existing Node.js and Python buildpacks
+- These fixes follow Heroku best practices for fullstack applications
 - The app structure remains clean with backend code in the `/backend` directory and frontend code in the `/frontend` directory
