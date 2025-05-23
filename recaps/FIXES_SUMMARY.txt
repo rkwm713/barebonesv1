@@ -2,6 +2,22 @@
 
 ## Issues Fixed
 
+### 0. API Routing Path Issues (Latest Fix)
+
+**Problem:** Heroku logs showed 405 Method Not Allowed errors when trying to upload files:
+```
+2025-05-23T06:48:33.434405+00:00 app[web.1]: INFO:     50.24.172.246:0 - "POST /api/api/upload HTTP/1.1" 405 Method Not Allowed
+2025-05-23T06:48:33.434836+00:00 heroku[router]: sock=backend at=error code=H18 desc="Server Request Interrupted" method=POST path="/api/api/upload"
+```
+
+**Root Cause:** The frontend client was configured to use `/api` as the base URL in production, but the backend routes weren't configured with this prefix. Additionally, Heroku was adding an `/api` prefix due to proxy configuration, resulting in a double prefix (`/api/api/`).
+
+**Solution:**
+- Modified the backend to use FastAPI's APIRouter with the `/api` prefix
+- Moved all REST API endpoints to this router
+- Updated the WebSocket endpoint to include the `/api` prefix
+- See full details in `recaps/API_ROUTING_FIX.txt`
+
 ### 1. File Upload Not Working
 
 **Problem:** When selecting a JSON file and clicking "Generate Reports", nothing happened.

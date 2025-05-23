@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket, WebSocketDisconnect, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 # Create FastAPI app
 app = FastAPI(title="MakeReady Report Generator API")
+
+# Create API router with prefix
+api_router = APIRouter(prefix="/api")
 
 # Configure CORS
 app.add_middleware(
@@ -223,12 +226,12 @@ def process_file_sync(file_content: bytes, filename: str, task_id: str) -> bool:
             logger.error(f"Error removing temp file: {str(e)}")
 
 # API Routes
-@app.get("/health")
+@api_router.get("/health")
 async def health_check():
     """Health check endpoint"""
     return {"status": "ok", "version": "2.0.0", "framework": "FastAPI"}
 
-@app.post("/upload", response_model=UploadResponse)
+@api_router.post("/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):
     """Upload a JSON file for processing"""
     # Validate file
@@ -263,7 +266,7 @@ async def upload_file(file: UploadFile = File(...)):
         status='queued'
     )
 
-@app.get("/tasks/{task_id}/status", response_model=TaskStatus)
+@api_router.get("/tasks/{task_id}/status", response_model=TaskStatus)
 async def get_task_status(task_id: str):
     """Get the status of a processing task"""
     if task_id not in processing_tasks:
@@ -272,7 +275,7 @@ async def get_task_status(task_id: str):
     task = processing_tasks[task_id]
     return TaskStatus(**task)
 
-@app.get("/tasks/{task_id}/download/{file_type}")
+@api_router.get("/tasks/{task_id}/download/{file_type}")
 async def download_file(task_id: str, file_type: str):
     """Download a processed file"""
     if task_id not in processing_tasks:
@@ -313,7 +316,7 @@ async def download_file(task_id: str, file_type: str):
         headers=headers
     )
 
-@app.delete("/tasks/{task_id}")
+@api_router.delete("/tasks/{task_id}")
 async def cleanup_task(task_id: str):
     """Clean up a task and its associated files"""
     if task_id not in processing_tasks:
@@ -324,7 +327,7 @@ async def cleanup_task(task_id: str):
     
     return {"status": "cleaned"}
 
-@app.websocket("/ws/tasks/{task_id}")
+@app.websocket("/api/ws/tasks/{task_id}")
 async def websocket_endpoint(websocket: WebSocket, task_id: str):
     """WebSocket endpoint for real-time task updates"""
     await manager.connect(websocket, task_id)
@@ -372,6 +375,9 @@ async def cleanup_old_tasks():
         except Exception as e:
             logger.error(f"Error in cleanup task: {e}")
             await asyncio.sleep(3600)
+
+# Include the API router in the main app
+app.include_router(api_router)
 
 # Serve static files from React build
 static_files_path = Path(__file__).parent.parent / "frontend" / "dist"

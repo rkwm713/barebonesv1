@@ -1,0 +1,38 @@
+# API ROUTING FIX
+
+## Issue
+The application was experiencing a 405 Method Not Allowed error with requests to `/api/api/upload`. This indicates a double prefix issue where the API endpoints were being called with `/api/api/` instead of just `/api/`.
+
+From the Heroku logs:
+```
+2025-05-23T06:48:33.434405+00:00 app[web.1]: INFO:     50.24.172.246:0 - "POST /api/api/upload HTTP/1.1" 405 Method Not Allowed
+2025-05-23T06:48:33.434836+00:00 heroku[router]: sock=backend at=error code=H18 desc="Server Request Interrupted" method=POST path="/api/api/upload" host=make-readyos-4318d7629f25.herokuapp.com request_id=3547d079-9b29-46c9-9565-1122390ce299 fwd="50.24.172.246" dyno=web.1 connect=0ms service=22ms status=503 bytes=263 protocol=https
+```
+
+## Root Cause
+The frontend client was configured to use `/api` as the base URL in production mode:
+```typescript
+// In frontend/src/api/client.ts
+const API_BASE_URL = import.meta.env.DEV ? '' : '/api'
+```
+
+However, the backend routes were not configured with this prefix, causing a mismatch. Additionally, when deployed to Heroku, there might be a proxy configuration that automatically adds the `/api` prefix, resulting in the double prefix (`/api/api/`).
+
+## Solution
+Modified the backend to use FastAPI's APIRouter with the `/api` prefix:
+
+1. Imported APIRouter from FastAPI
+2. Created a router instance with the `/api` prefix
+3. Moved all REST API endpoints to this router
+4. Updated the WebSocket endpoint to include the `/api` prefix
+5. Included the router in the main FastAPI app
+
+This change ensures that the backend routes will correctly handle requests with the `/api` prefix coming from the frontend client.
+
+## Testing
+After deploying this change, the application should properly handle API requests. No frontend changes were needed as the frontend was already configured correctly to use the `/api` prefix.
+
+## Future Considerations
+- For any new API endpoints, ensure they are added to the api_router, not directly to the app
+- Maintain consistency in API path prefixes across deployment environments
+- Consider using environment variables to configure API paths consistently between frontend and backend
