@@ -1034,13 +1034,16 @@ class FileProcessor:
                                         proposed_height_val = measured_height_val + total_move_inches
                                         proposed_height_fmt = self.format_height_feet_inches(proposed_height_val)
                                     
+                                    # Look up heights from the main pole's attacher data
+                                    main_pole_heights = main_pole_attachers_lookup.get(description, {'existing': '', 'proposed': ''})
+                                    
                                     span_attachers.append({
                                         'name': description,
-                                        'existing_height': existing_height_fmt,
-                                        'proposed_height': proposed_height_fmt,
-                                        'raw_height': measured_height_val,
+                                        'existing_height': main_pole_heights['existing'], # Use height from main pole
+                                        'proposed_height': main_pole_heights['proposed'], # Use height from main pole
+                                        'raw_height': measured_height_val, # Keep raw height from ref span for sorting if needed
                                     })
-                                    self.logger.log_item_processed(f"RefSpan-{category_pf}", f"{description} at {existing_height_fmt}")
+                                    self.logger.log_item_processed(f"RefSpan-{category_pf}", f"{description} at {main_pole_heights['existing']}") # Log with main pole height
                         
                 if span_attachers:
                     span_attachers.sort(key=lambda x: x['raw_height'], reverse=True)
