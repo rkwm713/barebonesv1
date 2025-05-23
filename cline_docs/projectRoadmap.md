@@ -11,7 +11,8 @@
   - [x] Implement unique (timestamped) filenames for Excel and log files in `FileProcessor`.
   - [x] Add `try...finally` block to `create_output_excel` for robust writer closing.
   - [x] Remove debug prints from `format_height_feet_inches`.
-  - [x] Correct logic in `format_height_feet_inches` to prevent "X' 12"" results.
+  - [x] Correct logic in `format_height_feet_inches` to prevent "X' 12"" results (initial attempt).
+  - [x] Implemented more robust correction in `format_height_feet_inches` with explicit integer conversion and inch rollover safeguard.
   - [x] Update `main()` in `barebones.py` for better local testing.
   - [ ] Further enhance error handling within `create_output_excel` for cell merging and formatting.
 - **File Serving (Flask & FastAPI):**
@@ -47,7 +48,7 @@
 - Modified `FileProcessor.process_files` to use timestamped unique filenames for Excel and log outputs.
 - Updated `FileProcessor.create_output_excel` to use a `try...finally` block, ensuring `ExcelWriter` is closed.
 - Removed debug `print` statements from `FileProcessor.format_height_feet_inches`.
-- Corrected logic in `FileProcessor.format_height_feet_inches` to prevent "X' 12"" height formatting errors.
+- Corrected logic in `FileProcessor.format_height_feet_inches` to prevent "X' 12"" height formatting errors (initial attempt and subsequent robust fix).
 - Improved `main` function in `barebones.py` for local testing.
 - Updated Flask app (`app.py`) `process_file` to correctly instantiate `FileProcessor` and find unique output files.
 - Updated FastAPI app (`backend/app.py`) `process_file_sync` to correctly instantiate `FileProcessor` and find unique output files, including adjusting the search prefix for processor-generated files.

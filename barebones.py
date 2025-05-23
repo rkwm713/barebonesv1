@@ -183,16 +183,27 @@ class FileProcessor:
         # Round to nearest inch first to handle potential floating point inaccuracies from source data
         # then convert to integer for divmod.
         try:
-            processed_total_in = int(round(float(total_in)))
+            # Attempt to convert to float first for flexibility, then round, then int.
+            # This handles cases where total_in might be a string representation of a number.
+            processed_total_in = int(round(float(str(total_in))))
         except (ValueError, TypeError):
             # Log error or return empty if conversion fails
+            # Consider logging here: logger.warning(f"Invalid input for height formatting: {total_in}")
             return ""
 
         feet, inches = divmod(processed_total_in, 12)
         
-        # The divmod operation itself should handle the 12 inches case correctly,
-        # as 'inches' will be the remainder, which should be < 12.
-        # No explicit 'if inches == 12:' check should be needed if input is processed correctly.
+        # Explicitly handle the case where inches might become 12 due to rounding or input.
+        # Although divmod should yield inches < 12, this is a safeguard.
+        if inches == 12: # This condition should ideally not be met if processed_total_in is correctly calculated.
+            feet += 1
+            inches = 0
+        
+        # Ensure inches are always less than 12, adjusting feet if necessary.
+        # This is a stronger safeguard.
+        if inches >= 12:
+             extra_feet, inches = divmod(inches, 12)
+             feet += extra_feet
 
         result = f"{feet}'-{inches}\""
         return result
